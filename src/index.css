@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* `dark:` segue o tema escolhido (atributo data-theme no <html>), não só o sistema */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Tokens da marca DS Agende — Modo Claro (padrão).
+ * Os mesmos nomes são redefinidos em [data-theme="dark"] logo abaixo;
+ * os componentes usam só os tokens (bg-card, text-fg, bg-accent…), nunca hex soltos.
+ */
+@theme {
+  --font-sans: "Arimo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Tenor Sans", "Arimo", ui-sans-serif, sans-serif;
+
+  /* Constantes da marca (não mudam com o tema) */
+  --color-raiz: #472415;      /* Raíz Sólida */
+  --color-ambar: #bf9055;     /* Âmbar da Entrega */
+  --color-ink: #180f0a;       /* marrom mais profundo: texto sobre âmbar */
+  --color-cream: #f5efe6;     /* Névoa Premium: texto sobre fundos escuros fixos */
+
+  /* Superfícies — Névoa Premium */
+  --color-canvas: #faf6f0;    /* fundo principal */
+  --color-surface: #fffdf9;   /* cabeçalho, barra de navegação, modais */
+  --color-card: #ffffff;      /* cards */
+  --color-elevated: #f5efe6;  /* hover, trilhos, campos em destaque */
+  --color-line: #e7daca;      /* bordas e divisórias */
+  --color-line-strong: #d4c0a8;
+  --color-faint: #d6c4ae;     /* barras neutras de gráficos */
+
+  /* Texto — Raíz Sólida */
+  --color-fg: #472415;
+  --color-fg-soft: #5c3a28;
+  --color-fg-muted: #6e4e3b;
+  --color-fg-subtle: #80604a; /* ≥ 4.9:1 em todos os fundos claros */
+
+  /* Âmbar da Entrega */
+  --color-accent: #bf9055;        /* botões de ação, badges, preenchimentos */
+  --color-accent-strong: #a97b42; /* hover */
+  --color-on-accent: #180f0a;     /* texto sobre âmbar (6.6:1) */
+  --color-highlight: #8a5a24;     /* âmbar usado como TEXTO/ícone (5.4:1 no creme) */
+
+  /* Cobre Humanizado */
+  --color-copper: #a0502a;
+
+  /* Bloco invertido (abas selecionadas, toasts, tooltips) */
+  --color-inverse: #472415;
+  --color-on-inverse: #faf6f0;
+
+  /* WhatsApp (simulação da conversa — mantém o visual do WhatsApp) */
+  --color-wa: #075e54;
+  --color-wa-light: #25d366;
+  --color-wa-bubble: #dcf8c6;
+  --color-wa-bg: #ece5dd;
+}
+
+/* Modo Noturno — fundos quentes derivados do marrom da marca */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #180f0a;
+  --color-surface: #1d120c;
+  --color-card: #241610;
+  --color-elevated: #2e1d15;
+  --color-line: #3a261b;
+  --color-line-strong: #4e3527;
+  --color-faint: #5a4233;
+
+  --color-fg: #f5efe6;
+  --color-fg-soft: #e6d8c4;
+  --color-fg-muted: #cdb79d;
+  --color-fg-subtle: #a88e76;
+
+  --color-accent: #bf9055;
+  --color-accent-strong: #cfa36b;
+  --color-on-accent: #180f0a;
+  --color-highlight: #d1a46b;
+
+  --color-copper: #d9875a;
+
+  --color-inverse: #f5efe6;
+  --color-on-inverse: #180f0a;
+}
+
+/*
+ * Cores de status (verde/âmbar/vermelho/azul…) foram pensadas como tons claros sobre fundo escuro.
+ * No modo claro, os tons 200–400 viram tons escuros para manter contraste AA sobre o creme.
+ */
+:root:not([data-theme="dark"]) {
+  color-scheme: light;
+  --color-rose-200: oklch(45.5% 0.188 13.697);
+  --color-rose-300: oklch(45.5% 0.188 13.697);
+  --color-rose-400: oklch(51.4% 0.222 16.935);
+  --color-amber-200: oklch(47.3% 0.137 46.201);
+  --color-amber-300: oklch(47.3% 0.137 46.201);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-emerald-200: oklch(43.2% 0.095 166.913);
+  --color-emerald-300: oklch(43.2% 0.095 166.913);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-sky-200: oklch(44.3% 0.11 240.79);
+  --color-sky-300: oklch(44.3% 0.11 240.79);
+  --color-sky-400: oklch(50% 0.134 242.749);
+  --color-fuchsia-200: oklch(45.2% 0.211 324.591);
+  --color-fuchsia-300: oklch(45.2% 0.211 324.591);
+  --color-fuchsia-400: oklch(51.8% 0.253 323.949);
+  --color-orange-200: oklch(47% 0.157 37.304);
+  --color-orange-300: oklch(47% 0.157 37.304);
+  --color-orange-400: oklch(55.3% 0.195 38.402);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .2s ease, color .2s ease;
+}
+
+/* Tenor Sans tem um único peso: não deixar o navegador "engordar" a fonte */
+.font-display { font-synthesis: none; letter-spacing: .02em; }
+
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* Logo: troca a arte conforme o tema */
+.logo-dark { display: none; }
+[data-theme="dark"] .logo-light { display: none; }
+[data-theme="dark"] .logo-dark { display: inline-block; }
+
+.scroll-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 4px; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+@keyframes scanline { 0% { top: 8%; } 50% { top: 88%; } 100% { top: 8%; } }
+.animate-scanline { animation: scanline 2.2s ease-in-out infinite; }
+
+@keyframes pop { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+.animate-pop { animation: pop .5s cubic-bezier(.2,.9,.3,1.3) both; }
+
+@keyframes slideup { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.animate-slideup { animation: slideup .25s ease-out both; }
+
+@keyframes flash { 0% { background-color: rgba(191,144,85,.35); } 100% { background-color: transparent; } }
+.animate-flash { animation: flash 1.2s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  body { transition: none; }
+}
+
+.wa-pattern {
+  background-color: #efeae2;
+  background-image: radial-gradient(rgba(0,0,0,.045) 1px, transparent 1px);
+  background-size: 14px 14px;
+}

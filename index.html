@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#faf6f0" />
+    <!-- Tema antes da 1ª pintura: escolha salva > preferência do sistema (evita "piscar") -->
+    <script>
+      (function () {
+        var t = null
+        try { t = localStorage.getItem('ds-agende-theme') } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = t
+        document.querySelector('meta[name="theme-color"]').content = t === 'dark' ? '#180f0a' : '#faf6f0'
+      })()
+    </script>
+    <title>DS Agende • Box CrossFit</title>
+    <meta name="description" content="Agenda de treinos, check-in por localização, conquistas e métricas de presença para boxes de CrossFit. Por Double S Tech." />
+
+    <!-- Atalho na tela inicial (sem instalar app) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="DS Agende" />
+
+    <!-- Prévia do link no WhatsApp / redes sociais -->
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:title" content="DS Agende • Agenda e check-in do box" />
+    <meta property="og:description" content="Reserve seu treino, faça check-in ao chegar e acompanhe suas conquistas." />
+    <meta property="og:image" content="__SITE_URL__/og-image.png" />
+    <meta property="og:url" content="__SITE_URL__/" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Tenor+Sans&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
