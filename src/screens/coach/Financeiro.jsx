@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Banknote, MessageCircle, Settings2, Wallet } from 'lucide-react'
+import { Banknote, Gift, MessageCircle, Settings2, Wallet } from 'lucide-react'
 import { PAY_METHODS, PLANS, brl, fmtDate } from '../../lib/constants'
-import { BILLING_LABEL, KIND_LABEL, billingStatus, confirmPayment, financeSummary, startCheckout, toast, updateSettings } from '../../lib/store'
+import { BILLING_LABEL, KIND_LABEL, billingStatus, confirmPayment, financeSummary, referralRuleLabel, startCheckout, toast, updateSettings } from '../../lib/store'
 import { Chip, Stat, inputCls } from '../../components/ui'
 
 const waLink = (phone, text) => `https://wa.me/55${(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
@@ -207,6 +207,61 @@ export default function Financeiro({ db }) {
         </div>
         <p className="mt-3 text-[10px] text-fg-subtle">Formas aceitas: Pix e Cartão pelo gateway (baixa automática via webhook) e Dinheiro/Maquininha na recepção (baixa manual aqui).</p>
       </Card>
+
+      <ReferralConfig db={db} />
     </div>
+  )
+}
+
+// Indique e Ganhe: o dono define quanto quem indica ganha por amigo matriculado
+function ReferralConfig({ db }) {
+  const rule = db.settings.referral
+  const setRule = (patch) => updateSettings({ referral: { ...rule, ...patch } })
+  const max = rule.type === 'pct' ? 100 : 1000
+  const credits = Object.values(db.people).flatMap((p) => (p.referralCredits || []).map((c) => ({ ...c, p })))
+  const pending = credits.filter((c) => c.status === 'disponivel').length
+  return (
+    <Card
+      title={
+        <span className="flex items-center gap-1.5">
+          <Gift size={14} /> Indique e Ganhe
+        </span>
+      }
+      right={<span className="text-[10px] font-bold text-highlight">{referralRuleLabel(rule)} por amigo</span>}
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex shrink-0 rounded-lg bg-surface p-0.5 ring-1 ring-line">
+          {[
+            ['fixed', 'R$'],
+            ['pct', '%'],
+          ].map(([k, l]) => (
+            <button
+              key={k}
+              onClick={() => setRule({ type: k, value: Math.min(k === 'pct' ? 100 : 1000, rule.value) })}
+              className={`rounded-md px-3 py-1.5 text-xs font-bold ${rule.type === k ? 'bg-inverse text-on-inverse' : 'text-fg-muted'}`}
+              aria-pressed={rule.type === k}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <input
+          type="number"
+          min={0}
+          max={max}
+          step={rule.type === 'pct' ? 1 : 5}
+          aria-label="Desconto por indicação"
+          className={`${inputCls} text-center`}
+          value={rule.value}
+          onChange={(e) => setRule({ value: Math.max(0, Math.min(max, Number(e.target.value) || 0)) })}
+        />
+      </div>
+      <p className="mt-2 text-[11px] text-fg-subtle">
+        Desconto na próxima mensalidade de quem indicou. Entra sozinho quando o amigo valida presença na aula experimental e fecha matrícula (botão <b>Matricular</b> em Turmas). Créditos já ganhos mantêm o valor da época.
+      </p>
+      <p className="mt-2 text-[11px] text-fg-muted">
+        {credits.length} crédito(s) gerado(s) • {pending} aguardando a próxima mensalidade
+      </p>
+    </Card>
   )
 }

@@ -13,13 +13,19 @@ create table boxes (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   lat double precision, lng double precision,
-  gps_radius_m int not null default 50,
+  gps_checkin_enabled boolean not null default true,                     -- Painel Coach → Capacidade: liga/desliga check-in por GPS
+  gps_radius_m int not null default 50 check (gps_radius_m in (30, 50, 100)), -- raio de tolerância do check-in
   checkin_window_min int not null default 15,
   timezone text not null default 'America/Sao_Paulo',    -- "dia" da agenda e do aniversário no fuso do box
   -- Regras definidas pelo responsável (Painel Coach → Capacidade)
   min_cancel_minutes int not null default 120 check (min_cancel_minutes between 0 and 2880), -- cancelar/trocar até X min antes (0 = até o início)
   book_ahead_days int not null default 7 check (book_ahead_days between 0 and 60),            -- reservar com até X dias de antecedência (0 = só no dia)
   reminder_time time not null default '20:00',
+  -- Regra Anti-Falta (Painel → Capacidade). O prazo para cancelar sem falta é min_cancel_minutes.
+  noshow_rule_enabled boolean not null default false,
+  noshow_tolerance int not null default 2 check (noshow_tolerance between 1 and 10),        -- faltas sem aviso no mês até punir
+  noshow_penalty text not null default 'block48' check (noshow_penalty in ('block48','loseRecurring','deductWeekly')),
+  dispatch_penalty boolean not null default true,
   -- Financeiro (Painel → Financeiro)
   grace_days int not null default 3 check (grace_days between 0 and 15),   -- carência após o vencimento
   price_2x numeric(10,2) not null default 189,
@@ -112,7 +118,7 @@ create table wods (
 
 -- ---------- Reservas, recorrência e lista de espera ----------
 create type booking_type   as enum ('avulso','recorrente','experimental','dropin','extra');
-create type booking_status as enum ('reservado','presente','cancelado','falta','pre_reserva','expirado');
+create type booking_status as enum ('reservado','presente','cancelado','falta','abonada','pre_reserva','expirado'); -- abonada = falta justificada, abonada pelo coach
 create type channel        as enum ('web','whatsapp','coach','sistema');
 create type checkin_method as enum ('qr','gps','manual');
 
@@ -177,8 +183,10 @@ create table notices (
   id uuid primary key default gen_random_uuid(),
   box_id uuid references boxes(id),
   title text not null, body text,
-  category text check (category in ('feriado','evento','aulao','geral')),
-  pinned boolean default false,
+  category text check (category in ('feriado','evento','aulao','desafio','geral')),
+  pinned boolean default false,      -- comunicado oficial fixado no topo do mural
+  event_date date,                   -- quando acontece (aparece em destaque no card)
+  highlight text,                    -- tag curta de destaque ("Horário especial", "20 vagas")
   author_id uuid references people(id),
   affected_day date,
   whatsapp_sent_at timestamptz,

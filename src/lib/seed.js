@@ -1,4 +1,4 @@
-import { DAYS, WEEKDAY_TIMES, SATURDAY_TIMES, COACHES, ME_ID } from './constants'
+import { DAYS, WEEKDAY_TIMES, SATURDAY_TIMES, COACHES, ME_ID, BADGES } from './constants'
 
 // RNG determinístico para a demo ficar igual a cada recarga
 function mulberry32(a) {
@@ -82,7 +82,13 @@ export function buildPeople() {
       extraCredits: 0,
       total: 0,
       early: 0,
+      lunch: 0,
+      night: 0,
       week: 0,
+      weeksInRow: 0,
+      mondays: 0,
+      fridays: 0,
+      saturdays: 0,
       referrals: 0,
       streak: 0,
       monthCount: 0,
@@ -138,16 +144,22 @@ export function buildPeople() {
     people[id].monthCount = Math.max(1, Math.floor(people[id].monthCount / 3))
     people[id].streak = 0
   }
+  // contadores por horário / dia da semana (determinísticos — não consomem r() para manter a demo estável)
+  Object.values(people).forEach((p, i) => {
+    if (p.id === ME_ID) return
+    const t = p.total
+    p.lunch = (i * 7) % Math.max(1, Math.min(25, Math.floor(t / 4)))
+    p.night = (i * 11) % Math.max(1, Math.min(30, Math.floor(t / 3)))
+    p.mondays = Math.min(12, (i * 3) % 9)
+    p.fridays = Math.min(12, (i * 5) % 8)
+    p.saturdays = Math.min(10, (i * 2) % 6)
+    p.weeksInRow = Math.floor(p.streak / 3)
+  })
   // badges coerentes com o histórico
   Object.values(people).forEach((p) => {
     if (p.id === ME_ID) return
-    if (p.total >= 1) p.badges.push('first_wod')
-    if (p.early >= 5) p.badges.push('madrugador')
-    if (p.total >= 10) p.badges.push('m10')
-    if (p.total >= 50) p.badges.push('m50')
-    if (p.total >= 100) p.badges.push('m100')
-    if (p.referrals) p.badges.push('dupla')
-    if (p.streak >= 8) p.badges.push('semana')
+    p.badges = BADGES.filter((b) => b.metric !== 'week' && (p[b.metric] || 0) >= b.goal).map((b) => b.id)
+    if (p.streak >= 8) p.badges.push('ritmo', 'semana')
   })
   return people
 }
@@ -241,6 +253,9 @@ export const TRIAL_FUNNEL_HISTORY = [
   }).filter(Boolean),
 ]
 
+// pinned = comunicado oficial fixado no topo do mural
+// eventDate = quando acontece (o mural mostra em destaque); date = quando foi publicado
+// highlight = tag curta de destaque ("Horário especial", "20 vagas"…)
 export function buildNotices() {
   return [
     {
@@ -249,18 +264,35 @@ export function buildNotices() {
       body: 'Funcionaremos apenas às 07:00 e 08:00 com WOD especial em dupla. Demais horários cancelados. Reservas já feitas serão migradas automaticamente.',
       category: 'feriado',
       pinned: true,
+      eventDate: '2026-11-20',
+      highlight: 'Horário especial',
       date: '2026-11-10',
       author: 'Coach Rafa',
       whatsappSent: true,
+      sentTo: 64,
     },
     {
       id: 'n2',
       title: 'Aulão de Sábado — 14/11 às 08:00',
       body: 'Partner WOD aberto a todos os níveis! Traga um amigo: convidados não pagam e ganham uma aula experimental. 20 vagas.',
-      category: 'evento',
+      category: 'aulao',
       pinned: true,
+      eventDate: '2026-11-14',
+      highlight: 'Traga um amigo',
       date: '2026-11-09',
       author: 'Coach Bia',
+      whatsappSent: false,
+    },
+    {
+      id: 'n5',
+      title: 'Desafio Interno de Novembro: 1.000 Burpees',
+      body: 'Some burpees ao longo do mês e registre na lousa depois de cada aula. Quem fechar 1.000 até 30/11 ganha o selo do desafio e concorre a uma camiseta do box.',
+      category: 'desafio',
+      pinned: true,
+      eventDate: '2026-11-30',
+      highlight: 'Vale prêmio',
+      date: '2026-11-02',
+      author: 'Coach Léo',
       whatsappSent: false,
     },
     {
@@ -269,6 +301,7 @@ export function buildNotices() {
       body: 'Inscrições abertas para o campeonato interno nas categorias Iniciante, Scaled e RX. Valor: R$ 60 com camiseta. Inscrição na recepção ou pelo WhatsApp.',
       category: 'evento',
       pinned: false,
+      eventDate: '2026-11-28',
       date: '2026-11-05',
       author: 'Coach Léo',
       whatsappSent: false,

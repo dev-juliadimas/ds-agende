@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { Flame, Camera as Instagram, Lock, Trophy, Medal, Share2, X } from 'lucide-react'
-import { BADGES, BOX, ME_ID, PLANS, dayByKey } from '../lib/constants'
+import { Flame, Camera as Instagram, Lock, Trophy, Medal, Share2, X, CheckCircle2, Award } from 'lucide-react'
+import { BADGES, BADGE_CATS, BOX, ME_ID, PLANS, badgeValue, dayByKey, fmtDate } from '../lib/constants'
 import { demoBoost, dismissCelebration, saveResult, toast } from '../lib/store'
 import { Btn, Stat, inputCls } from '../components/ui'
+import IndiqueGanhe from '../components/IndiqueGanhe'
 
-const metricOf = (p, m) => ({ total: p.total, early: p.early, week: p.week, referrals: p.referrals || 0 })[m] || 0
 
 export default function Conquistas({ db }) {
   const me = db.people[ME_ID]
   const [tab, setTab] = useState('selos')
+  const [cat, setCat] = useState('todas')
   const ranking = Object.values(db.people)
     .filter((p) => p.role === 'aluno')
     .sort((a, b) => b.monthCount - a.monthCount || b.streak - a.streak)
@@ -35,6 +36,10 @@ export default function Conquistas({ db }) {
         </div>
       </div>
 
+      <div className="px-5 pb-4">
+        <IndiqueGanhe db={db} />
+      </div>
+
       <div className="mx-5 flex rounded-xl bg-card p-1 ring-1 ring-line">
         {[
           ['selos', 'Selos'],
@@ -49,25 +54,21 @@ export default function Conquistas({ db }) {
 
       {tab === 'selos' && (
         <div className="px-5 pt-4">
-          <div className="grid grid-cols-2 gap-2.5">
-            {BADGES.map((b) => {
-              const got = me.badges.includes(b.id)
-              const v = Math.min(b.goal, metricOf(me, b.metric))
-              return (
-                <div key={b.id} className={`relative rounded-2xl p-3 ring-1 ${got ? 'bg-card ring-accent/50' : 'bg-card/50 ring-line'}`}>
-                  <div className={`text-3xl ${got ? '' : 'opacity-25 grayscale'}`}>{b.emoji}</div>
-                  {!got && <Lock size={12} className="absolute right-3 top-3 text-fg-subtle" />}
-                  <div className="mt-1 font-display text-lg font-bold leading-tight">{b.name}</div>
-                  <div className="text-[11px] leading-snug text-fg-subtle">{b.desc}</div>
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-elevated">
-                    <div className="h-full rounded-full bg-accent" style={{ width: `${(v / b.goal) * 100}%` }} />
-                  </div>
-                  <div className="mt-1 text-[10px] text-fg-subtle">
-                    {v}/{b.goal}
-                  </div>
-                </div>
-              )
-            })}
+          <div className="-mx-5 mb-3 flex gap-1.5 overflow-x-auto px-5 pb-1 scroll-thin">
+            {[{ k: 'todas', emoji: '✨', short: 'Todas' }, ...BADGE_CATS].map((c) => (
+              <button
+                key={c.k}
+                onClick={() => setCat(c.k)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold ring-1 ${cat === c.k ? 'bg-accent text-on-accent ring-accent' : 'bg-card text-fg-muted ring-line'}`}
+              >
+                {c.emoji} {c.short}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-5">
+            {BADGE_CATS.filter((c) => cat === 'todas' || cat === c.k).map((c) => (
+              <BadgeGroup key={c.k} cat={c} me={me} />
+            ))}
           </div>
           <div className="mt-4 rounded-2xl border border-dashed border-line p-3">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-fg-subtle">Atalhos da demonstração</p>
@@ -79,7 +80,13 @@ export default function Conquistas({ db }) {
                 ⚡ 5 na semana
               </Btn>
               <Btn variant="dark" className="px-3 py-1.5 text-xs" onClick={() => demoBoost('ten')}>
-                🏆 10 aulas
+                🏆 10 treinos
+              </Btn>
+              <Btn variant="dark" className="px-3 py-1.5 text-xs" onClick={() => demoBoost('friday')}>
+                🎉 5 sextas
+              </Btn>
+              <Btn variant="dark" className="px-3 py-1.5 text-xs" onClick={() => demoBoost('night')}>
+                🦉 5 às 19:30
               </Btn>
             </div>
           </div>
@@ -169,38 +176,146 @@ function ResultRow({ b, wod }) {
   )
 }
 
-export function Celebration({ db }) {
+function BadgeGroup({ cat, me }) {
+  const list = BADGES.filter((b) => b.cat === cat.k)
+  const got = list.filter((b) => me.badges.includes(b.id)).length
+  return (
+    <section>
+      <div className="mb-2 flex items-end justify-between">
+        <h3 className="font-display text-lg font-extrabold uppercase leading-none">
+          {cat.emoji} {cat.label}
+        </h3>
+        <span className="text-[11px] font-semibold text-fg-subtle">
+          {got}/{list.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {list.map((b) => (
+          <BadgeRow key={b.id} b={b} me={me} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function BadgeRow({ b, me }) {
+  const got = me.badges.includes(b.id)
+  const v = got ? b.goal : badgeValue(me, b)
+  return (
+    <div className={`flex items-center gap-3 rounded-2xl p-3 ring-1 ${got ? 'bg-card ring-accent/50' : 'bg-card/50 ring-line'}`}>
+      <div className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-elevated text-2xl ${got ? '' : 'grayscale'}`}>
+        <span className={got ? '' : 'opacity-40'}>{b.emoji}</span>
+        {!got && <Lock size={11} className="absolute -right-1 -top-1 text-fg-subtle" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 font-display text-base font-bold leading-tight">{b.name}</div>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${got ? 'bg-emerald-500/15 text-emerald-500' : 'bg-elevated text-fg-subtle'}`}>
+            {got ? 'Conquistado' : 'Em andamento'}
+          </span>
+        </div>
+        <div className="text-[11px] leading-snug text-fg-subtle">{b.desc}</div>
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-elevated">
+            <div className={`h-full rounded-full ${got ? 'bg-emerald-500' : 'bg-accent'}`} style={{ width: `${(v / b.goal) * 100}%` }} />
+          </div>
+          <span className="text-[10px] font-semibold text-fg-subtle">
+            {v}/{b.goal}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// "Selo do Dia" do treino: um selo novo desbloqueado tem prioridade; senão, um selo de presença pelo horário/dia
+function daySeal(slot, newBadges, wodName) {
+  const nb = newBadges.includes('first_wod') ? 'first_wod' : newBadges[0]
+  if (nb) {
+    const b = BADGES.find((x) => x.id === nb)
+    return { emoji: b.emoji, name: b.name, desc: b.desc, isNew: true }
+  }
+  const day = dayByKey(slot.day).label
+  if (slot.time === '06:00') return { emoji: '🌅', name: 'Madrugador das 06:00', desc: `Treinou cedo: ${wodName}` }
+  if (slot.time === '12:10') return { emoji: '🥗', name: 'Almoço no Box', desc: `Pausa do almoço bem usada: ${wodName}` }
+  if (slot.time === '19:30') return { emoji: '🦉', name: 'Corujão da Noite', desc: `Fechou o dia no box: ${wodName}` }
+  if (slot.day === 'sab') return { emoji: '🏋️', name: 'Aulão de Sábado', desc: `Sábado concluído: ${wodName}` }
+  return { emoji: '✅', name: `Check-in Confirmado — WOD de ${day}`, desc: wodName }
+}
+
+// Próximos selos ligados a este treino: horário, dia da semana, semana e próximo marco
+function nextSeals(me, slot) {
+  const pending = (b) => b && !me.badges.includes(b.id)
+  const out = []
+  const add = (b) => pending(b) && !out.includes(b) && out.push(b)
+  add(BADGES.find((b) => b.cat === 'horario' && b.time === slot.time))
+  add(BADGES.find((b) => b.metric === { seg: 'mondays', sex: 'fridays', sab: 'saturdays' }[slot.day]))
+  BADGES.filter((b) => b.cat === 'semana').forEach(add)
+  add(BADGES.find((b) => b.metric === 'total' && pending(b)))
+  return out.slice(0, 3)
+}
+
+export function Celebration({ db, nav }) {
   const [story, setStory] = useState(false)
-  const id = db.celebration
-  if (!id) return null
-  const b = BADGES.find((x) => x.id === id)
+  const c = db.celebration
+  if (!c) return null
   const me = db.people[ME_ID]
   const close = () => {
     setStory(false)
     dismissCelebration()
   }
+  const seeAll = () => {
+    close()
+    nav?.('conquistas')
+  }
+
+  // Modo 1: pós check-in real (QR/GPS) → "Treino Concluído!"
+  // Modo 2: selo avulso (atalhos da demo, check-in manual do coach, indicação)
+  let seal, slot, extra, upcoming, sub
+  if (typeof c === 'object' && c.kind === 'treino') {
+    slot = db.slots.find((s) => s.id === c.slotId)
+    const wod = db.wods[slot.day]
+    seal = daySeal(slot, c.newBadges, wod?.name || 'WOD do dia')
+    extra = c.newBadges.map((id) => BADGES.find((b) => b.id === id)).filter((b) => b.name !== seal.name)
+    upcoming = nextSeals(me, slot)
+    sub = `${dayByKey(slot.day).label} ${fmtDate(dayByKey(slot.day).date)} • ${slot.time} • via ${c.method === 'qr' ? 'QR Code' : 'GPS'}`
+  } else {
+    const b = BADGES.find((x) => x.id === c)
+    seal = { ...b, isNew: true }
+  }
+
   const share = async () => {
-    const text = `${b.emoji} Desbloqueei o selo "${b.name}" no ${BOX.name}! ${me.total} treino(s) concluído(s). #DSAgende`
+    const text = `${seal.emoji} ${slot ? 'Treino concluído no' : 'Desbloqueei o selo'} ${slot ? BOX.name : `"${seal.name}" no ${BOX.name}`}! ${slot ? `Selo do dia: ${seal.name}. ` : ''}${me.total} treino(s) concluído(s). #DSAgende`
     try {
-      if (navigator.share) await navigator.share({ title: b.name, text })
+      if (navigator.share) await navigator.share({ title: seal.name, text })
       else throw new Error()
     } catch {
       toast('Card pronto! Abrindo Instagram Stories… (simulado)')
     }
   }
+
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm">
-      <button onClick={close} className="absolute right-4 top-14 rounded-full bg-card p-2 text-fg-soft" aria-label="Fechar">
+    <div className="absolute inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-6 backdrop-blur-sm">
+      <button onClick={close} className="absolute right-4 top-14 z-10 rounded-full bg-card p-2 text-fg-soft" aria-label="Fechar">
         <X size={18} />
       </button>
       {story ? (
         <div className="animate-pop flex w-full max-w-[250px] flex-col items-center">
           <div className="relative aspect-[9/16] w-full overflow-hidden rounded-3xl bg-gradient-to-br from-ambar via-[#d8b382] to-[#c47a4a] p-5 text-ink shadow-2xl">
-            <div className="text-[10px] font-extrabold uppercase tracking-[.3em]">{BOX.short}</div>
-            <div className="mt-10 text-center text-7xl">{b.emoji}</div>
-            <div className="mt-4 text-center font-display text-3xl font-extrabold uppercase leading-none">{b.name}</div>
-            <p className="mt-2 text-center text-xs font-semibold">{b.desc}</p>
-            <div className="mt-6 rounded-2xl bg-ink/90 p-3 text-center text-cream">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ink font-display text-[11px] font-extrabold leading-none text-ambar ring-2 ring-ink/20">
+                {BOX.short
+                  .split(' ')
+                  .map((w) => w[0])
+                  .join('')}
+              </div>
+              <div className="text-[10px] font-extrabold uppercase tracking-[.3em]">{BOX.short}</div>
+            </div>
+            {slot && <div className="mt-6 text-center text-[10px] font-extrabold uppercase tracking-[.25em]">Treino concluído 🔥</div>}
+            <div className={`${slot ? 'mt-3' : 'mt-10'} text-center text-7xl`}>{seal.emoji}</div>
+            <div className="mt-4 text-center font-display text-2xl font-extrabold uppercase leading-none">{seal.name}</div>
+            <p className="mt-2 text-center text-xs font-semibold">{slot ? sub.split(' • via')[0] : seal.desc}</p>
+            <div className="mt-5 rounded-2xl bg-ink/90 p-3 text-center text-cream">
               <div className="font-display text-4xl font-extrabold text-ambar">{me.total}</div>
               <div className="text-[10px] uppercase tracking-widest">treinos concluídos</div>
             </div>
@@ -209,24 +324,74 @@ export function Celebration({ db }) {
           <Btn className="mt-4 w-full bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-400 text-white" onClick={share}>
             <Instagram size={16} /> Publicar nos Stories
           </Btn>
+          <Btn variant="ghost" className="mt-2 w-full text-white" onClick={() => setStory(false)}>
+            Voltar
+          </Btn>
         </div>
       ) : (
-        <div className="animate-pop w-full rounded-3xl bg-surface p-6 text-center ring-1 ring-accent/40">
-          <div className="text-[10px] font-bold uppercase tracking-[.25em] text-highlight">Novo selo desbloqueado</div>
-          <div className="my-4 text-7xl drop-shadow-[0_0_25px_rgba(200,255,46,.45)]">{b.emoji}</div>
-          <h2 className="font-display text-3xl font-extrabold uppercase">{b.name}</h2>
-          <p className="mt-1 text-sm text-fg-muted">{b.desc}</p>
-          <div className="mt-5 space-y-2">
+        <div className="animate-pop my-auto w-full rounded-3xl bg-surface p-5 text-center ring-1 ring-accent/40">
+          {slot ? (
+            <>
+              <h2 className="font-display text-3xl font-extrabold uppercase leading-none">Treino Concluído! 🔥</h2>
+              <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-fg-muted">
+                <CheckCircle2 size={12} className="text-emerald-500" /> {sub}
+              </p>
+            </>
+          ) : (
+            <div className="text-[10px] font-bold uppercase tracking-[.25em] text-highlight">Novo selo desbloqueado</div>
+          )}
+
+          <div className="mt-4 rounded-2xl bg-card p-4 ring-1 ring-line">
+            {slot && <div className="text-[10px] font-bold uppercase tracking-[.2em] text-highlight">{seal.isNew ? 'Novo selo • Selo do dia' : 'Selo do dia'}</div>}
+            <div className="my-2 text-6xl drop-shadow-[0_0_25px_rgba(200,255,46,.45)]">{seal.emoji}</div>
+            <div className="font-display text-2xl font-extrabold uppercase leading-tight">{seal.name}</div>
+            <p className="mt-0.5 text-xs text-fg-muted">{seal.desc}</p>
+            {!!extra?.length && (
+              <div className="mt-2 flex flex-wrap justify-center gap-1">
+                {extra.map((b) => (
+                  <span key={b.id} className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-highlight">
+                    + {b.emoji} {b.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!!upcoming?.length && (
+            <div className="mt-3 space-y-2 text-left">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-fg-subtle">Próximos selos</div>
+              {upcoming.map((b) => {
+                const v = badgeValue(me, b)
+                return (
+                  <div key={b.id}>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="font-semibold">
+                        {b.emoji} {v}/{b.goal} {b.unit} para {b.name}
+                      </span>
+                      <span className="text-fg-subtle">{Math.round((v / b.goal) * 100)}%</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-elevated">
+                      <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${(v / b.goal) * 100}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="mt-4 space-y-2">
             <Btn className="w-full" onClick={() => setStory(true)}>
-              <Share2 size={16} /> Compartilhar no Instagram Stories
+              <Share2 size={16} /> Compartilhar nos Stories
             </Btn>
-            <Btn variant="ghost" className="w-full" onClick={close}>
-              Continuar
+            <Btn variant="ghost" className="w-full" onClick={seeAll}>
+              <Award size={16} /> Ver todas as conquistas
             </Btn>
           </div>
-          <p className="mt-3 flex items-center justify-center gap-1 text-[10px] text-fg-subtle">
-            <Medal size={11} /> Também enviado no seu WhatsApp
-          </p>
+          {seal.isNew && (
+            <p className="mt-3 flex items-center justify-center gap-1 text-[10px] text-fg-subtle">
+              <Medal size={11} /> Também enviado no seu WhatsApp
+            </p>
+          )}
         </div>
       )}
     </div>

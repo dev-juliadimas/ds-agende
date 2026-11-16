@@ -6,7 +6,7 @@
  * Aqui simulamos isso com um store em memória + useSyncExternalStore.
  */
 import { useSyncExternalStore } from 'react'
-import { BADGES, BOX, CLASS_DURATION, DAYS, DISPATCHES, DROPIN_PRICE, HOLD_MINUTES, META_PRICE, ME_ID, PAY_METHODS, PIX_EXTRA_PRICE, PLANS, TRIAL_LEVELS, brl, dayByKey, dayIndex, fmtDate, fromMin, toMin } from './constants'
+import { BADGES, BOX, CLASS_DURATION, DAYS, DISPATCHES, DROPIN_PRICE, HOLD_MINUTES, META_PRICE, ME_ID, PAY_METHODS, PENALTIES, PIX_EXTRA_PRICE, PLANS, TRIAL_LEVELS, brl, dayByKey, dayIndex, fmtDate, fromMin, toMin } from './constants'
 import { buildBookings, buildHistory, buildNotices, buildPeople, buildSlots, buildStories, seedBirthdays, TRIAL_FUNNEL_HISTORY, WODS } from './seed'
 
 let uid = 1000
@@ -27,7 +27,10 @@ function initialState() {
     // minCancelHours (0,5 = 30 min) → boxes.min_cancel_minutes no Supabase (em minutos)
     // graceDays: dias de tolerância após o vencimento → boxes.grace_days
     // dispatches: liga/desliga cada disparo ativo do bot (custo Meta) → boxes.dispatch_*
+    // gpsEnabled / gpsRadiusM: check-in por geolocalização e raio de tolerância (30/50/100 m) → boxes.gps_checkin_enabled / gps_radius_m
     settings: {
+      gpsEnabled: true,
+      gpsRadiusM: BOX.gpsRadiusM,
       minCancelHours: 2,
       bookAheadDays: 1,
       reminderTime: '20:00',
@@ -35,7 +38,12 @@ function initialState() {
       salesMaxPct: 70,
       graceDays: 3,
       prices: { '2x': PLANS['2x'].price, '3x': PLANS['3x'].price, ilimitado: PLANS.ilimitado.price, dropin: DROPIN_PRICE, extra: PIX_EXTRA_PRICE },
-      dispatches: { reminder: true, waitlist: true, billing: true, urgent: true, badge: true, rescue: false },
+      dispatches: { reminder: true, waitlist: true, billing: true, urgent: true, badge: true, rescue: false, penalty: true },
+      // Regra Anti-Falta: ao atingir `tolerance` faltas sem aviso no mês, aplica `penalty` (ver PENALTIES)
+      // O prazo para cancelar sem falta é o mesmo minCancelHours → boxes.noshow_rule_enabled / noshow_tolerance / noshow_penalty
+      noShowRule: { enabled: false, tolerance: 2, penalty: 'block48' },
+      // Indique e Ganhe: desconto na próxima mensalidade de quem indicou → boxes.referral_reward_type / referral_reward_value
+      referral: { type: 'fixed', value: 30 }, // type: 'fixed' (R$) | 'pct' (% da mensalidade)
     },
     slots,
     people,
@@ -181,12 +189,125 @@ export function canBook(s, slotId, pid, type = 'avulso') {
     if (bs.status === 'bloqueado')
       return { ok: false, code: 'blocked', msg: `Acesso bloqueado: a mensalidade venceu em ${fmtDate(bs.due)} e a carência de ${s.settings.graceDays} dias acabou. Regularize em Planos para voltar a reservar.` }
   }
+  // Regra Anti-Falta (bloqueio de 48h): só aulas do próprio dia. A reserva fixa gerada pelo sistema não passa por aqui.
+  const pen = p && p.role === 'aluno' && type !== 'recorrente' && type !== 'dropin' ? activePenalty(s, pid) : null
+  if (pen?.type === 'block48' && dayIndex(slot.day) > dayIndex(s.now.day))
+    return { ok: false, code: 'penalty', msg: `Você atingiu ${pen.count} faltas sem aviso este mês. Reservas antecipadas suspensas até ${absLabel(pen.untilAbs)}. Aulas de hoje continuam liberadas.` }
   if (p && p.role === 'aluno' && type !== 'experimental' && type !== 'extra' && p.plan) {
-    const limit = PLANS[p.plan].limit + (p.extraCredits || 0)
+    const limit = weeklyLimit(s, pid)
     if (weeklyCount(s, pid) >= limit)
-      return { ok: false, code: 'plan', msg: `Limite do plano ${PLANS[p.plan].label} atingido nesta semana.` }
+      return {
+        ok: false,
+        code: 'plan',
+        msg: `Limite do plano ${PLANS[p.plan].label} atingido nesta semana.${pen?.type === 'deductWeekly' ? ' (1 aula descontada pela regra anti-falta)' : ''}`,
+      }
   }
   return { ok: true }
+}
+
+/* ---------------- Regra Anti-Falta (penalidade por no-show) ---------------- */
+const absMin = (now) => dayIndex(now.day) * 1440 + now.min
+// minuto absoluto da semana → "SÁB 05:50"
+export function absLabel(abs) {
+  const d = DAYS[Math.floor(abs / 1440)]
+  return d ? `${d.short} ${fromMin(abs % 1440)}` : 'a próxima semana'
+}
+// Penalidade em vigor: o bloqueio de 48h expira sozinho; as demais valem até o fim do mês ou até o coach abonar
+export function activePenalty(s, pid) {
+  const pen = s.people[pid]?.penalty
+  if (!pen) return null
+  if (pen.type === 'block48' && absMin(s.now) >= pen.untilAbs) return null
+  return pen
+}
+// Limite semanal do plano, já com créditos extras e o desconto da regra anti-falta
+export function weeklyLimit(s, pid) {
+  const p = s.people[pid]
+  if (!p?.plan) return Infinity
+  return PLANS[p.plan].limit + (p.extraCredits || 0) - (activePenalty(s, pid)?.type === 'deductWeekly' ? 1 : 0)
+}
+
+// Chamado a cada falta sem aviso registrada. Aplica a penalidade quando o aluno chega ao limite do mês.
+function applyNoShowRule(pid) {
+  const rule = state.settings.noShowRule
+  const p = state.people[pid]
+  if (!rule?.enabled || !p || p.role !== 'aluno') return null
+  if ((p.monthNoShows || 0) < rule.tolerance || activePenalty(state, pid)) return null
+  const first = p.name.split(' ')[0]
+  const pen = { type: rule.penalty, count: p.monthNoShows, appliedAt: stamp() }
+  let extra = ''
+  if (rule.penalty === 'block48') {
+    pen.untilAbs = absMin(state.now) + 48 * 60
+    extra = `Até ${absLabel(pen.untilAbs)} você só consegue reservar aulas do próprio dia.`
+  }
+  if (rule.penalty === 'loseRecurring') {
+    const rec = state.recurrences.find((r) => r.personId === pid)
+    pen.prevRecurrence = rec || null
+    set((s) => ({ recurrences: s.recurrences.filter((r) => r.personId !== pid) }))
+    const future = state.bookings.filter((b) => b.personId === pid && b.type === 'recorrente' && b.status === 'reservado' && slotStatus(state, slotById(state, b.slotId)) === 'open')
+    patchPerson(pid, { penalty: pen })
+    for (const b of future) cancel(b.id, 'sistema', { force: true, reason: 'penalidade' })
+    extra = rec ? `Sua reserva fixa (${rec.days.map((d) => dayByKey(d).short).join('/')} ${rec.time}) foi desativada e ${future.length} vaga(s) futura(s) liberada(s).` : 'Você não poderá ativar reserva fixa enquanto a penalidade estiver valendo.'
+  }
+  if (rule.penalty === 'deductWeekly') extra = 'Seu pacote desta semana ficou com 1 aula a menos.'
+  patchPerson(pid, { penalty: pen })
+  log('sistema', `⚠️ Regra anti-falta: ${first} atingiu ${pen.count} faltas sem aviso no mês → ${PENALTIES[pen.type].label}`)
+  if (pid === ME_ID) toast(`⚠️ ${pen.count} faltas sem aviso este mês: ${PENALTIES[pen.type].short}`, 'err')
+  dispatch(
+    'penalty',
+    pid,
+    `⚠️ *Regra anti-falta — ${BOX.name}*\nOi, ${first}! Você atingiu *${pen.count} faltas sem aviso* este mês.\n*${PENALTIES[pen.type].short}.* ${extra}\n\nDica: cancele até ${fmtHours(state.settings.minCancelHours)} antes da aula para não contar falta. Teve um imprevisto? Fale com o coach para abonar.`,
+  )
+  return pen
+}
+
+function liftPenalty(pid, reason = 'abono') {
+  const pen = state.people[pid]?.penalty
+  if (!pen) return false
+  patchPerson(pid, { penalty: null })
+  if (pen.type === 'loseRecurring' && pen.prevRecurrence) setRecurrence(pid, pen.prevRecurrence.days, pen.prevRecurrence.time, 'sistema')
+  log('sistema', `Penalidade anti-falta de ${state.people[pid].name.split(' ')[0]} retirada (${reason})${pen.type === 'loseRecurring' && pen.prevRecurrence ? ' • reserva fixa reativada' : ''}`)
+  return true
+}
+
+// Coach abona a falta (aluno justificou um imprevisto): sai da contagem do mês e das métricas
+export function excuseNoShow(bookingId) {
+  const b = state.bookings.find((x) => x.id === bookingId)
+  if (!b || b.status !== 'falta') return { ok: false, msg: 'Esta reserva não está marcada como falta.' }
+  const p = state.people[b.personId]
+  const left = Math.max(0, (p.monthNoShows || 0) - 1)
+  let recDone = false
+  set((s) => ({
+    bookings: s.bookings.map((x) => (x.id === bookingId ? { ...x, status: 'abonada', excusedAt: stamp() } : x)),
+    people: { ...s.people, [p.id]: { ...p, monthNoShows: left, consecutiveNoShows: Math.max(0, (p.consecutiveNoShows || 0) - 1) } },
+    history: [...s.history]
+      .reverse()
+      .map((r) => {
+        if (recDone || r.slotId !== b.slotId) return r
+        recDone = true
+        return { ...r, noshow: Math.max(0, r.noshow - 1), excused: (r.excused || 0) + 1 }
+      })
+      .reverse(),
+  }))
+  const first = p.name.split(' ')[0]
+  const lifted = !!p.penalty && left < state.settings.noShowRule.tolerance && liftPenalty(p.id)
+  log('coach', `Falta de ${first} em ${slotLabel(slotById(state, b.slotId))} abonada pelo coach`)
+  if (lifted) {
+    if (p.id === ME_ID) toast('✅ Falta abonada pelo coach. Penalidade retirada.')
+    dispatch('penalty', p.id, `✅ *Falta abonada*\nOi, ${first}! O coach abonou sua falta. A penalidade anti-falta foi retirada e suas reservas voltaram ao normal. 💪`, null, { silent: true })
+  }
+  return { ok: true, lifted }
+}
+
+// Demo: registra uma falta sem aviso da Marina numa aula passada (sem precisar encerrar turma)
+export function demoNoShow(pid = ME_ID) {
+  const p = state.people[pid]
+  patchPerson(pid, { monthNoShows: (p.monthNoShows || 0) + 1, consecutiveNoShows: (p.consecutiveNoShows || 0) + 1, streak: 0 })
+  log('sistema', `Demo: falta sem aviso registrada para ${p.name.split(' ')[0]} (${state.people[pid].monthNoShows} no mês)`)
+  return applyNoShowRule(pid)
+}
+export function demoResetNoShows(pid = ME_ID) {
+  liftPenalty(pid, 'demo')
+  patchPerson(pid, { monthNoShows: 0, consecutiveNoShows: 0 })
 }
 
 function slotLabel(slot) {
@@ -265,7 +386,15 @@ export function cancel(bookingId, source = 'web', { force = false, reason } = {}
   if (!rule.ok && !force) return { ok: false, msg: rule.msg }
   set((s) => ({ bookings: s.bookings.map((x) => (x.id === bookingId ? { ...x, status: 'cancelado', cancelledBy: source, cancelReason: reason } : x)) }))
   const slot = slotById(state, b.slotId)
-  log(source, reason === 'inadimplencia' ? `Reserva de ${state.people[b.personId].name.split(' ')[0]} em ${slotLabel(slot)} suspensa por inadimplência` : `${state.people[b.personId].name.split(' ')[0]} liberou a vaga de ${slotLabel(slot)}`)
+  const who = state.people[b.personId].name.split(' ')[0]
+  log(
+    source,
+    reason === 'inadimplencia'
+      ? `Reserva de ${who} em ${slotLabel(slot)} suspensa por inadimplência`
+      : reason === 'penalidade'
+        ? `Reserva fixa de ${who} em ${slotLabel(slot)} cancelada pela regra anti-falta`
+        : `${who} liberou a vaga de ${slotLabel(slot)}`,
+  )
   flashSlot(b.slotId)
   promoteWaitlist(b.slotId)
   return { ok: true }
@@ -310,6 +439,8 @@ export function swap(bookingId, newSlotId, source = 'web') {
 }
 
 export function setRecurrence(personId, days, time, source = 'web') {
+  if (activePenalty(state, personId)?.type === 'loseRecurring')
+    return { ok: false, created: [], failed: [], msg: 'Reserva fixa suspensa pela regra anti-falta deste mês. Fale com o coach se a falta teve justificativa.' }
   const rec = { id: nid('r'), personId, days, time, source }
   set((s) => ({ recurrences: [...s.recurrences.filter((r) => r.personId !== personId), rec] }))
   const created = []
@@ -367,18 +498,18 @@ export function createDropin({ name, phone, fromBox, experience, slotId, method 
 
 /* ---------------- presença, selos e encerramento ---------------- */
 function evalBadges(p) {
-  const metrics = { total: p.total, early: p.early, week: p.week, referrals: p.referrals || 0 }
-  return BADGES.filter((b) => !p.badges.includes(b.id) && metrics[b.metric] >= b.goal).map((b) => b.id)
+  return BADGES.filter((b) => !p.badges.includes(b.id) && (p[b.metric] || 0) >= b.goal).map((b) => b.id)
 }
 
-function awardFor(pid, mutate) {
+// celebrate=false: quem chama abre a própria celebração (ex.: modal pós-treino do check-in)
+function awardFor(pid, mutate, { celebrate = true } = {}) {
   const p = { ...state.people[pid] }
   mutate(p)
   const newOnes = evalBadges(p)
   p.badges = [...p.badges, ...newOnes]
   set((s) => ({ people: { ...s.people, [pid]: p } }))
   if (pid === ME_ID && newOnes.length) {
-    set({ celebration: newOnes[0] })
+    if (celebrate) set({ celebration: newOnes[0] })
     for (const id of newOnes) {
       const bd = BADGES.find((b) => b.id === id)
       dispatch('badge', ME_ID, `${bd.emoji} *Novo selo desbloqueado: ${bd.name}!*\n${bd.desc}\n\nCompartilhe sua conquista nos Stories e marque @icaracross 💪`)
@@ -395,15 +526,29 @@ export function checkin(bookingId, method = 'manual') {
   set((s) => ({ bookings: s.bookings.map((x) => (x.id === bookingId ? { ...x, status: 'presente', checkin: { method, at: clock() } } : x)) }))
   const p = state.people[b.personId]
   log(method === 'manual' ? 'coach' : 'web', `Presença confirmada: ${p.name.split(' ')[0]} em ${slotLabel(slot)} (${method === 'qr' ? 'QR Code' : method === 'gps' ? 'GPS' : 'manual'})`)
-  awardFor(b.personId, (x) => {
-    x.total = (x.total || 0) + 1
-    x.monthCount = (x.monthCount || 0) + 1
-    x.streak = (x.streak || 0) + 1
-    x.lastVisitDays = 0
-    x.consecutiveNoShows = 0
-    if (slot.time === '06:00') x.early = (x.early || 0) + 1
-    x.week = (x.week || 0) + 1
-  })
+  // Presença real do próprio aluno (QR ou GPS) abre o modal "Treino Concluído!" com o selo do dia
+  const realMe = b.personId === ME_ID && (method === 'qr' || method === 'gps')
+  const newBadges = awardFor(
+    b.personId,
+    (x) => {
+      x.total = (x.total || 0) + 1
+      x.monthCount = (x.monthCount || 0) + 1
+      x.streak = (x.streak || 0) + 1
+      x.lastVisitDays = 0
+      x.consecutiveNoShows = 0
+      if (slot.time === '06:00') x.early = (x.early || 0) + 1
+      if (slot.time === '12:10') x.lunch = (x.lunch || 0) + 1
+      if (slot.time === '19:30') x.night = (x.night || 0) + 1
+      if (slot.day === 'seg') x.mondays = (x.mondays || 0) + 1
+      if (slot.day === 'sex') x.fridays = (x.fridays || 0) + 1
+      if (slot.day === 'sab') x.saturdays = (x.saturdays || 0) + 1
+      x.week = (x.week || 0) + 1
+      // semana "sem falta" = bateu 3 treinos na semana → soma na sequência de semanas
+      if (x.week === 3) x.weeksInRow = (x.weeksInRow || 0) + 1
+    },
+    { celebrate: !realMe },
+  )
+  if (realMe) set({ celebration: { kind: 'treino', bookingId, slotId: b.slotId, method, newBadges } })
   // Quem indicou um amigo para experimental ganha o selo "Treino em Dupla" quando o amigo comparece
   const ref = b.referrerId || p.referrerId
   if (b.type === 'experimental' && ref && state.people[ref]?.role === 'aluno') {
@@ -454,8 +599,11 @@ function haversine(lat1, lng1, lat2, lng2) {
 // Distância atual do aluno até o box: GPS real do aparelho (se ativado) ou posição simulada da demo
 export function distanceToBox(s) {
   if (s.realGps) return haversine(s.realGps.lat, s.realGps.lng, BOX.lat, BOX.lng)
-  return s.gpsInside ? 38 : 2300
+  // posição simulada "dentro do box": sempre dentro do raio configurado (ex.: 18 m no raio de 30 m)
+  return s.gpsInside ? Math.min(38, Math.round(gpsRadius(s) * 0.6)) : 2300
 }
+export const gpsRadius = (s) => s.settings?.gpsRadiusM ?? BOX.gpsRadiusM
+export const gpsEnabled = (s) => s.settings?.gpsEnabled !== false
 export function setRealGps(coords) {
   set({ realGps: coords })
 }
@@ -465,7 +613,9 @@ export function gpsCheck(s, booking) {
   const dist = distanceToBox(s)
   return {
     dist,
-    inRadius: dist <= BOX.gpsRadiusM,
+    radius: gpsRadius(s),
+    enabled: gpsEnabled(s),
+    inRadius: dist <= gpsRadius(s),
     inWindow: m <= w && m >= -w,
     minutesToOpen: Math.max(0, m - w),
     late: m < -w,
@@ -474,18 +624,41 @@ export function gpsCheck(s, booking) {
 export function checkinGPS(bookingId) {
   const b = state.bookings.find((x) => x.id === bookingId)
   if (!b) return { ok: false, msg: 'Reserva não encontrada.' }
+  if (b.status === 'presente') return { ok: false, msg: 'Presença já confirmada nesta aula.' }
+  if (b.status === 'pre_reserva') return { ok: false, msg: 'Pagamento desta aula ainda pendente. Conclua o Pix/Cartão para confirmar a vaga.' }
   const g = gpsCheck(state, { ...b, slot: slotById(state, b.slotId) })
+  if (!g.enabled) return { ok: false, msg: 'O check-in por GPS está desativado pelo box. Use o QR Code com o coach.' }
   if (!g.inWindow) return { ok: false, msg: g.late ? 'A janela de check-in desta aula já fechou.' : `O check-in libera ${BOX.checkinWindowMin} min antes da aula.` }
-  if (!g.inRadius) return { ok: false, msg: `Você está a ${fmtDist(g.dist)} do box. Chegue a até ${BOX.gpsRadiusM} m para confirmar.` }
+  if (!g.inRadius) return { ok: false, msg: `Você está a ${fmtDist(g.dist)} do box. Chegue a até ${g.radius} m para confirmar.` }
   const r = checkin(bookingId, 'gps')
   set((s) => ({ bookings: s.bookings.map((x) => (x.id === bookingId ? { ...x, checkin: { ...x.checkin, distance: g.dist } } : x)) }))
   return r
+}
+// "Cheguei no Box (GPS)": usa a posição real do aparelho (navigator.geolocation) e confirma direto
+export function checkinRealGPS(bookingId) {
+  return new Promise((resolve) => {
+    if (!gpsEnabled(state)) return resolve({ ok: false, msg: 'O check-in por GPS está desativado pelo box. Use o QR Code com o coach.' })
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve({ ok: false, msg: 'Este aparelho não oferece geolocalização. Use o QR Code.' })
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setRealGps({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) })
+        resolve(checkinGPS(bookingId))
+      },
+      () => resolve({ ok: false, msg: 'Permissão de localização negada ou GPS indisponível. Use o QR Code com o coach.' }),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    )
+  })
+}
+// "Simular GPS no Box": coloca o aluno dentro do raio (demo/testes remotos) e confirma pelo mesmo fluxo do GPS
+export function checkinSimulatedGPS(bookingId) {
+  set({ gpsInside: true, realGps: null })
+  return checkinGPS(bookingId)
 }
 export const fmtDist = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${m} m`)
 
 export function gpsEligible(s, pid = ME_ID) {
   const list = myBookings(s, pid).filter((b) => b.status === 'reservado')
-  return list.find((b) => Math.abs(minutesUntil(s, b.slot)) <= BOX.checkinWindowMin) || null
+  return list.find((b) => gpsEnabled(s) && Math.abs(minutesUntil(s, b.slot)) <= BOX.checkinWindowMin) || null
 }
 
 export function closeClass(slotId) {
@@ -523,7 +696,8 @@ export function closeClass(slotId) {
     qr: s.qr?.slotId === slotId ? null : s.qr,
   }))
   log('coach', `Aula ${slotLabel(slot)} encerrada: ${present} presentes, ${cancelled} cancelados no prazo, ${noshow} faltas sem aviso`)
-  return rec
+  const penalized = noShowIds.map((pid) => applyNoShowRule(pid) && pid).filter(Boolean)
+  return { ...rec, penalized }
 }
 
 export function convertTrial(personId) {
@@ -534,6 +708,7 @@ export function convertTrial(personId) {
   }))
   log('coach', `${p.name.split(' ')[0]} foi matriculado(a) após aula experimental 🎯`)
   toast(`${p.name} convertido(a) em aluno(a)!`)
+  grantReferralCredit(personId)
 }
 
 export function saveResult(bookingId, result) {
@@ -602,17 +777,28 @@ export function togglePin(id) {
 export function deleteNotice(id) {
   set((s) => ({ notices: s.notices.filter((n) => n.id !== id) }))
 }
-export function dispatchUrgent(noticeId, dayKey) {
+// Fixados primeiro (pelo evento mais próximo), depois os demais do mais novo para o mais antigo
+export function sortNotices(list) {
+  return [...list].sort((a, b) => b.pinned - a.pinned || (a.pinned ? (a.eventDate || a.date).localeCompare(b.eventDate || b.date) : b.date.localeCompare(a.date)))
+}
+// Quem recebe o aviso no WhatsApp: inscritos de um dia ou todos os alunos ativos
+export function noticeRecipients(s, target) {
+  if (target === 'todos') return new Set(Object.values(s.people).filter((p) => p.role === 'aluno').map((p) => p.id))
+  const slotIds = s.slots.filter((x) => x.day === target).map((x) => x.id)
+  return new Set(s.bookings.filter((b) => slotIds.includes(b.slotId) && active(b)).map((b) => b.personId))
+}
+// target: chave do dia ('qui') ou 'todos'
+export function dispatchUrgent(noticeId, target) {
   const n = state.notices.find((x) => x.id === noticeId)
-  const slotIds = state.slots.filter((x) => x.day === dayKey).map((x) => x.id)
-  const recipients = new Set(state.bookings.filter((b) => slotIds.includes(b.slotId) && active(b)).map((b) => b.personId))
-  set((s) => ({ notices: s.notices.map((x) => (x.id === noticeId ? { ...x, whatsappSent: true, sentTo: recipients.size, sentDay: dayKey } : x)) }))
   if (!state.settings.dispatches.urgent) {
     log('sistema', `Disparo “Aviso urgente” desligado no painel: aviso só no mural, nada enviado no WhatsApp`)
     return 0
   }
-  for (const pid of recipients) dispatch('urgent', pid, `🚨 *AVISO URGENTE — ${BOX.name}*\n\n*${n.title}*\n${n.body}`, null, { silent: true })
-  log('whatsapp', `Alerta urgente enviado para ${recipients.size} alunos inscritos na ${dayByKey(dayKey).label}`)
+  const recipients = noticeRecipients(state, target)
+  set((s) => ({ notices: s.notices.map((x) => (x.id === noticeId ? { ...x, whatsappSent: true, sentTo: recipients.size, sentDay: target } : x)) }))
+  const when = n.eventDate ? ` — ${fmtDate(n.eventDate)}` : ''
+  for (const pid of recipients) dispatch('urgent', pid, `📢 *${BOX.name} — Comunicado*\n\n*${n.title}*${when}\n${n.body}`, null, { silent: true })
+  log('whatsapp', `Aviso enviado no WhatsApp para ${recipients.size} alunos ${target === 'todos' ? '(todos os alunos)' : `inscritos na ${dayByKey(target).label}`}`)
   return recipients.size
 }
 
@@ -702,6 +888,72 @@ export function billingStatus(s, pid) {
 
 export const priceOf = (s, kind, plan) => (kind === 'mensalidade' ? s.settings.prices[plan] : s.settings.prices[kind])
 
+/* ---------------- Indique e Ganhe ---------------- */
+export const REFERRAL_HOST = 'dsagende.com/box/convite'
+const slugify = (t) =>
+  (t || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+export const referralLink = (s, pid = ME_ID) => `${REFERRAL_HOST}/${slugify(s.people[pid]?.name.split(' ')[0])}`
+export const referralRuleLabel = (r) => (r.type === 'pct' ? `${r.value}%` : brl(r.value))
+// Valor de um crédito sobre uma mensalidade. O crédito guarda a regra do momento em que foi ganho ("garantido").
+const creditValue = (c, price) => (c.type === 'pct' ? Math.round(price * c.value) / 100 : c.value)
+
+// Desconto que entra automaticamente na próxima mensalidade (soma dos créditos disponíveis, até zerar a mensalidade)
+export function monthlyDue(s, pid, plan) {
+  const p = s.people[pid]
+  const price = priceOf(s, 'mensalidade', plan || p?.plan)
+  const credits = (p?.referralCredits || []).filter((c) => c.status === 'disponivel')
+  const discount = Math.min(price, credits.reduce((a, c) => a + creditValue(c, price), 0))
+  return { price, discount, total: price - discount, credits }
+}
+
+// Amigos indicados por um aluno e a etapa de cada um: agendou → fez a aula → matriculou
+export function referralSummary(s, pid = ME_ID) {
+  const friends = Object.values(s.people)
+    .filter((x) => x.referrerId === pid && !x.companionOf)
+    .map((x) => {
+      const attended = s.bookings.some((b) => b.personId === x.id && b.type === 'experimental' && b.status === 'presente')
+      return { ...x, stage: x.converted ? 'matriculado' : attended ? 'aula' : 'agendado' }
+    })
+  const credits = s.people[pid]?.referralCredits || []
+  const due = monthlyDue(s, pid)
+  return { friends, enrolled: friends.filter((f) => f.stage === 'matriculado').length, credits, available: due.discount, used: credits.filter((c) => c.status === 'usado') }
+}
+
+// Gatilho: o amigo indicado VALIDOU presença na experimental e FECHOU matrícula → crédito para quem indicou
+function grantReferralCredit(friendId) {
+  const f = state.people[friendId]
+  const ref = f?.referrerId && state.people[f.referrerId]
+  if (!ref || ref.role !== 'aluno') return
+  const attended = state.bookings.some((b) => b.personId === friendId && b.type === 'experimental' && b.status === 'presente')
+  if (!attended || (ref.referralCredits || []).some((c) => c.friendId === friendId)) return
+  const rule = state.settings.referral
+  const credit = { id: nid('ref'), friendId, type: rule.type, value: rule.value, status: 'disponivel', grantedAt: stamp() }
+  patchPerson(ref.id, { referralCredits: [...(ref.referralCredits || []), credit] })
+  const friendFirst = f.name.split(' ')[0]
+  const what = rule.type === 'pct' ? `${rule.value}% de desconto` : `${brl(rule.value)} de desconto`
+  log('sistema', `🎁 Indique e Ganhe: ${ref.name.split(' ')[0]} ganhou ${what} na próxima mensalidade (${friendFirst} se matriculou)`)
+  if (ref.id === ME_ID) toast(`🎁 ${friendFirst} se matriculou! ${what} garantido na sua próxima mensalidade.`)
+  dispatch('billing', ref.id, `🎁 *Indique e Ganhe*\n${friendFirst} fez a aula experimental e se matriculou no ${BOX.name}. Obrigado pela indicação!\n*${what}* entra automaticamente na sua próxima mensalidade. 💪`, null, { silent: true })
+}
+
+// Atalho da demo: um amigo indicado agenda, valida presença na experimental e se matricula
+export function demoReferralFriend(pid = ME_ID) {
+  const names = ['Paula Reis', 'Igor Matos', 'Sofia Prado', 'Daniel Luz', 'Helena Brito']
+  const n = Object.values(state.people).filter((x) => x.referrerId === pid).length
+  // aula experimental de segunda (já passou), para não ocupar vaga da grade atual
+  const slot = state.slots.find((x) => x.day === DAYS[0].key && TRIAL_LEVELS.includes(x.level)) || state.slots[0]
+  const p = newPerson({ name: names[n % names.length], phone: '(11) 97777-0000', role: 'visitante', referrerId: pid, parq: { injuries: 'Nenhuma', experience: 'Indicação (demo)' } })
+  const bid = nid('b')
+  set((s) => ({ bookings: [...s.bookings, { id: bid, slotId: slot.id, personId: p.id, type: 'experimental', status: 'reservado', source: 'web', referrerId: pid, demo: true }] }))
+  checkin(bid, 'qr')
+  convertTrial(p.id)
+}
+
 function patchPerson(pid, patch) {
   set((s) => ({ people: { ...s.people, [pid]: { ...s.people[pid], ...patch } } }))
 }
@@ -754,7 +1006,9 @@ export function enforceBilling({ silent = false } = {}) {
 export function startCheckout({ kind, personId = ME_ID, plan, slotId = null, method, source = 'web' }) {
   const p = state.people[personId]
   const finalPlan = kind === 'mensalidade' ? plan || p.plan : null
-  const amount = priceOf(state, kind, finalPlan)
+  // Mensalidade já sai com o desconto do Indique e Ganhe; os créditos só são consumidos quando o pagamento confirma
+  const due = kind === 'mensalidade' ? monthlyDue(state, personId, finalPlan) : null
+  const amount = due ? due.total : priceOf(state, kind, finalPlan)
   const online = method === 'pix' || method === 'cartao'
   let booking = null
   if (slotId) {
@@ -763,6 +1017,7 @@ export function startCheckout({ kind, personId = ME_ID, plan, slotId = null, met
     booking = r.booking
   }
   const pay = { id: nid('pay'), personId, kind, plan: finalPlan, amount, method, status: 'pendente', createdAt: stamp(), bookingId: booking?.id || null, source }
+  if (due?.discount) Object.assign(pay, { discount: due.discount, creditIds: due.credits.map((c) => c.id) })
   set((s) => ({
     payments: [
       pay,
@@ -794,6 +1049,10 @@ export function confirmPayment(paymentId, { method } = {}) {
     let next = addDays(p.dueDate || todayISO(state), 30)
     while (next <= todayISO(state)) next = addDays(next, 30)
     patchPerson(p.id, { dueDate: next, plan: pay.plan, blockedAt: null, graceNotified: null })
+    if (pay.creditIds?.length) {
+      const used = new Set(pay.creditIds)
+      patchPerson(p.id, { referralCredits: (state.people[p.id].referralCredits || []).map((c) => (used.has(c.id) ? { ...c, status: 'usado', paymentId: pay.id } : c)) })
+    }
     const rec = state.recurrences.find((r) => r.personId === p.id)
     if (wasBlocked && rec) rebooked = setRecurrence(p.id, rec.days, rec.time, 'sistema').created
   }
@@ -880,6 +1139,14 @@ export function demoBoost(kind) {
       x.total = Math.max(x.total, 5)
     }
     if (kind === 'ten') x.total = Math.max(x.total, 10)
+    if (kind === 'night') {
+      x.night = Math.max(x.night || 0, 5)
+      x.total = Math.max(x.total, 5)
+    }
+    if (kind === 'friday') {
+      x.fridays = Math.max(x.fridays || 0, 5)
+      x.total = Math.max(x.total, 5)
+    }
   })
 }
 export function resetDemo() {

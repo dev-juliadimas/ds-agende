@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarClock, Check, ChevronRight, Clock, Globe2, MapPin, QrCode, Repeat, ScanLine, UserPlus, Users, Zap, Hourglass, ArrowLeftRight, XCircle, Lock } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
-import { BOX, DAYS, LEVELS, ME_ID, PLANS, TRIAL_LEVELS, WEEKDAY_TIMES, brl, dayByKey, dayIndex, fmtDate } from '../lib/constants'
+import { BOX, DAYS, LEVELS, ME_ID, PENALTIES, PLANS, TRIAL_LEVELS, WEEKDAY_TIMES, brl, dayByKey, dayIndex, fmtDate } from '../lib/constants'
 import {
   book,
   canBook,
@@ -11,6 +11,10 @@ import {
   createDropin,
   createTrial,
   checkinGPS,
+  checkinRealGPS,
+  checkinSimulatedGPS,
+  gpsEnabled,
+  gpsRadius,
   fmtDist,
   gpsCheck,
   setRealGps,
@@ -33,6 +37,9 @@ import {
   bookingWindow,
   activeStories,
   markStorySeen,
+  activePenalty,
+  absLabel,
+  weeklyLimit,
 } from '../lib/store'
 import { Alert, Btn, CapacityBar, Chip, Field, LevelTag, Logo, Sheet, inputCls } from '../components/ui'
 import { StoriesBar } from '../components/Stories'
@@ -55,7 +62,7 @@ export default function Agenda({ db, nav = () => {} }) {
   const slots = db.slots.filter((s) => s.day === day && (level === 'all' || s.level === level))
   const wod = db.wods[day]
   const used = weeklyCount(db, ME_ID)
-  const limit = PLANS[me.plan].limit + (me.extraCredits || 0)
+  const limit = weeklyLimit(db, ME_ID)
 
   return (
     <div className="pb-6">
@@ -79,6 +86,7 @@ export default function Agenda({ db, nav = () => {} }) {
         </div>
 
         <BillingBanner db={db} nav={nav} />
+        <NoShowBanner db={db} />
 
         {/* Stories dos coaches */}
         <div className="-mx-5 mt-3">
@@ -106,18 +114,22 @@ export default function Agenda({ db, nav = () => {} }) {
             </div>
             {next.status !== 'presente' && (
               <>
-                <button
-                  onClick={() => setSheet('gps')}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-3.5 font-display text-xl font-extrabold uppercase tracking-wide text-ambar shadow-lg active:scale-[.98]"
-                >
-                  <MapPin size={20} /> Estou aqui
-                </button>
-                <div className="mt-2 flex items-center justify-between text-[10px] font-semibold opacity-75">
-                  <span>📍 Confirmação por localização • até {BOX.gpsRadiusM} m do box</span>
-                  <button onClick={() => setSheet('scan')} className="flex items-center gap-1 underline">
-                    <ScanLine size={11} /> Sem GPS? QR
+                {gpsEnabled(db) ? (
+                  <button
+                    onClick={() => setSheet('gps')}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-3.5 font-display text-xl font-extrabold uppercase tracking-wide text-ambar shadow-lg active:scale-[.98]"
+                  >
+                    <MapPin size={20} /> Estou aqui
                   </button>
-                </div>
+                ) : (
+                  <button
+                    onClick={() => setSheet('scan')}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-ink py-3.5 font-display text-xl font-extrabold uppercase tracking-wide text-ambar shadow-lg active:scale-[.98]"
+                  >
+                    <ScanLine size={20} /> Ler QR Code
+                  </button>
+                )}
+                <GpsCheckinRow db={db} booking={next} onQR={() => setSheet('scan')} />
               </>
             )}
           </div>
@@ -239,6 +251,46 @@ function BillingBanner({ db, nav }) {
       </span>
       <span className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold uppercase ${blocked ? 'bg-rose-500 text-white' : 'bg-accent text-ink'}`}>Pagar</span>
     </button>
+  )
+}
+
+/* Regra Anti-Falta: penalidade em vigor ou alerta de quantas faltas o aluno já tem no mês */
+function NoShowBanner({ db }) {
+  const rule = db.settings.noShowRule
+  const me = db.people[ME_ID]
+  const pen = activePenalty(db, ME_ID)
+  const n = me.monthNoShows || 0
+  if (pen) {
+    const detail = {
+      block48: `Até ${absLabel(pen.untilAbs)} você só reserva aulas do próprio dia.`,
+      loseRecurring: 'Sua reserva fixa foi desativada neste mês. Reservas avulsas seguem liberadas.',
+      deductWeekly: `Seu pacote desta semana ficou com ${weeklyLimit(db, ME_ID)} aula(s).`,
+    }[pen.type]
+    return (
+      <div role="alert" className="mt-3 flex items-start gap-3 rounded-2xl bg-rose-500/15 px-3 py-2.5 text-xs ring-1 ring-rose-500/40">
+        <span className="text-2xl leading-none">⚠️</span>
+        <span className="min-w-0 flex-1">
+          <b className="text-rose-700 dark:text-rose-300">
+            Você atingiu {pen.count} faltas sem aviso este mês. {PENALTIES[pen.type].short}.
+          </b>
+          <span className="block text-fg-muted">
+            {detail} Teve um imprevisto? Fale com o coach para abonar a falta.
+          </span>
+        </span>
+      </div>
+    )
+  }
+  if (!rule.enabled || n === 0) return null
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-2xl bg-amber-500/10 px-3 py-2 text-xs ring-1 ring-amber-500/30">
+      <span className="text-xl leading-none">⏰</span>
+      <span className="min-w-0 flex-1 text-fg-muted">
+        <b className="text-amber-700 dark:text-amber-200">
+          {n} de {rule.tolerance} faltas sem aviso este mês.
+        </b>{' '}
+        Ao chegar a {rule.tolerance}: {PENALTIES[rule.penalty].label.toLowerCase()}. Cancele até {fmtHours(db.settings.minCancelHours)} antes para não contar.
+      </span>
+    </div>
   )
 }
 
@@ -450,6 +502,8 @@ function BookingSheet({ db, slotId, onClose, onExtra, nav }) {
               Regularizar mensalidade
             </Btn>
           </div>
+        ) : check.code === 'penalty' ? (
+          <Alert kind="err">⚠️ {check.msg}</Alert>
         ) : check.code === 'full' ? (
           <Btn
             className="w-full"
@@ -477,9 +531,16 @@ function BookingSheet({ db, slotId, onClose, onExtra, nav }) {
             <p className="text-center text-[10px] uppercase tracking-wider text-fg-subtle">Pix, cartão ou na recepção</p>
           </div>
         ) : (
-          <Btn className="w-full py-3.5 text-base" onClick={doBook}>
-            <Check size={18} /> Confirmar reserva
-          </Btn>
+          <div className="space-y-2">
+            {db.settings.noShowRule.enabled && (
+              <Alert kind="warn">
+                ⏰ <b>Cancele até {fmtHours(db.settings.minCancelHours)} antes para evitar falta.</b> Faltas sem aviso este mês: {db.people[ME_ID].monthNoShows || 0}/{db.settings.noShowRule.tolerance}.
+              </Alert>
+            )}
+            <Btn className="w-full py-3.5 text-base" onClick={doBook}>
+              <Check size={18} /> Confirmar reserva
+            </Btn>
+          </div>
         )}
         <p className="text-center text-[11px] text-fg-subtle">Cancelamento e troca até {fmtHours(db.settings.minCancelHours)} antes do início.</p>
       </div>
@@ -528,7 +589,9 @@ function RecurringSheet({ db, open, onClose }) {
             ))}
           </div>
         </Field>
-        {result && (
+        {result && result.ok === false ? (
+          <Alert kind="err">⚠️ {result.msg}</Alert>
+        ) : result && (
           <Alert kind={result.failed.length ? 'warn' : 'ok'}>
             Reserva fixa ativada! {result.created.length ? `Nesta semana: ${result.created.map((s) => dayByKey(s.day).short).join(', ')} garantidos.` : 'Os dias escolhidos desta semana já passaram — começa na próxima semana.'}
             {result.failed.map((f) => (
@@ -740,6 +803,54 @@ function DropinSheet({ db, open, onClose }) {
   )
 }
 
+/* ---------------- Check-in rápido: GPS real, QR e simulação (demo) ---------------- */
+function GpsCheckinRow({ db, booking, onQR }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  useEffect(() => setErr(''), [booking.id, db.settings.gpsEnabled, db.settings.gpsRadiusM])
+  const enabled = gpsEnabled(db)
+  const done = (r) => {
+    setBusy(false)
+    if (r.ok) toast('📍 Presença confirmada por GPS!')
+    else setErr(r.msg)
+  }
+  const real = async () => {
+    setErr('')
+    setBusy(true)
+    done(await checkinRealGPS(booking.id))
+  }
+  const sim = () => {
+    setErr('')
+    done(checkinSimulatedGPS(booking.id))
+  }
+  if (!enabled) {
+    return <div className="mt-2 text-[10px] font-semibold opacity-75">📍 Check-in por GPS desativado pelo box • confirme pelo QR Code do coach</div>
+  }
+  return (
+    <>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <button
+          onClick={real}
+          disabled={busy}
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-ink/15 py-2 text-xs font-bold ring-1 ring-ink/20 active:scale-[.98] disabled:opacity-60"
+        >
+          {busy ? 'Localizando…' : '📍 Cheguei no Box (GPS)'}
+        </button>
+        <button onClick={onQR} className="flex items-center justify-center gap-1.5 rounded-xl bg-ink/15 py-2 text-xs font-bold ring-1 ring-ink/20 active:scale-[.98]">
+          <ScanLine size={13} /> Ler QR Code
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px] font-semibold opacity-75">
+        <span>📍 Confirmação por localização • até {gpsRadius(db)} m do box</span>
+        <button onClick={sim} className="underline opacity-80" title="Para demonstrações remotas: coloca você dentro do raio do box">
+          Simular GPS no Box
+        </button>
+      </div>
+      {err && <div className="mt-2 rounded-lg bg-ink/15 px-2.5 py-1.5 text-[11px] font-semibold">{err}</div>}
+    </>
+  )
+}
+
 /* ---------------- Leitor de QR ---------------- */
 function ScanSheet({ db, open, onClose }) {
   const [res, setRes] = useState(null)
@@ -817,7 +928,7 @@ function LocationSheet({ db, booking, open, onClose, onQR }) {
   return (
     <Sheet open onClose={onClose} title="Estou aqui" tall>
       <div className="space-y-4">
-        <BoxMap dist={g.dist} />
+        <BoxMap dist={g.dist} radius={g.radius} />
         <div className="text-center">
           <div className={`font-display text-4xl font-extrabold ${g.inRadius ? 'text-highlight' : 'text-rose-400'}`}>{fmtDist(g.dist)}</div>
           <div className="text-xs text-fg-muted">
@@ -827,7 +938,7 @@ function LocationSheet({ db, booking, open, onClose, onQR }) {
           <div className="mt-0.5 text-[11px] text-fg-subtle">{BOX.address}</div>
         </div>
         <div className="space-y-1.5">
-          <CheckRow ok={g.inRadius} label={g.inRadius ? `Dentro do raio de ${BOX.gpsRadiusM} m do box` : `Fora do raio de ${BOX.gpsRadiusM} m — aproxime-se do box`} />
+          <CheckRow ok={g.inRadius} label={g.inRadius ? `Dentro do raio de ${g.radius} m do box` : `Fora do raio de ${g.radius} m — aproxime-se do box`} />
           <CheckRow
             ok={g.inWindow}
             label={
@@ -874,11 +985,11 @@ function CheckRow({ ok, label }) {
   )
 }
 
-// Mapa estilizado: box no centro, círculo de 50 m e a posição do aluno
-function BoxMap({ dist }) {
-  const R = 62 // px que representam o raio de 50 m
-  const far = dist > 120
-  const r = far ? 128 : (dist / BOX.gpsRadiusM) * R
+// Mapa estilizado: box no centro, círculo do raio configurado e a posição do aluno
+function BoxMap({ dist, radius = BOX.gpsRadiusM }) {
+  const R = 62 // px que representam o raio configurado
+  const far = dist > radius * 2.4
+  const r = far ? 128 : (dist / radius) * R
   const ang = -0.75
   const ux = 160 + Math.cos(ang) * Math.min(r, 128)
   const uy = 105 + Math.sin(ang) * Math.min(r, 128) * 0.75
@@ -894,7 +1005,7 @@ function BoxMap({ dist }) {
         <rect x="140" y="92" width="58" height="40" rx="4" className="fill-line-strong" />
         <circle cx="160" cy="105" r={R} className="fill-accent/10 stroke-accent" strokeDasharray="4 4" strokeWidth="1.5" />
         <text x="160" y={105 - R - 5} textAnchor="middle" fontSize="9" className="fill-highlight">
-          raio {BOX.gpsRadiusM} m
+          raio {radius} m
         </text>
         <g>
           <circle cx="160" cy="105" r="13" className="fill-accent" />

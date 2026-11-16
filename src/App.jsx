@@ -36,7 +36,7 @@ function NearbyCheckin({ db }) {
   const b = myBookings(db).find((x) => {
     if (x.status !== 'reservado' || dismissed[x.id]) return false
     const g = gpsCheck(db, x)
-    return g.inRadius && g.inWindow
+    return g.enabled && g.inRadius && g.inWindow
   })
   if (!b) return null
   const g = gpsCheck(db, b)
@@ -154,7 +154,7 @@ export default function App() {
         </nav>
       </div>
       {tab !== 'coach' && <NearbyCheckin db={db} />}
-      <Celebration db={db} />
+      <Celebration db={db} nav={nav} />
       <Toasts toasts={db.toasts} />
     </PhoneFrame>
   )

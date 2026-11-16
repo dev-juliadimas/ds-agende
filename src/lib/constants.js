@@ -70,17 +70,46 @@ export const DISPATCHES = [
   { k: 'urgent', label: 'Aviso urgente (aula cancelada, chuva…)', cat: 'utilidade', perMonth: 40 },
   { k: 'badge', label: 'Parabéns por selo conquistado', cat: 'marketing', perMonth: 140 },
   { k: 'rescue', label: 'Resgate de aluno sumido (automático)', cat: 'marketing', perMonth: 25 },
+  { k: 'penalty', label: 'Regra anti-falta: penalidade aplicada ou abonada', cat: 'utilidade', perMonth: 15 },
+]
+
+// Regra Anti-Falta: o que acontece quando o aluno atinge o limite de faltas sem aviso no mês
+export const PENALTIES = {
+  block48: { label: 'Bloqueio de reserva antecipada por 48h', short: 'Reservas antecipadas suspensas por 48h', desc: 'Durante 48h o aluno só reserva aulas do próprio dia.' },
+  loseRecurring: { label: 'Perda da reserva fixa recorrente', short: 'Reserva fixa cancelada', desc: 'A reserva fixa é desativada e as vagas futuras vão para a lista de espera.' },
+  deductWeekly: { label: 'Descontar aula do pacote semanal', short: '1 aula descontada do pacote desta semana', desc: 'O limite semanal do plano cai 1 aula nesta semana.' },
+}
+
+// Selos agrupados em 4 categorias (Conquistas). `metric` é o contador no perfil do aluno.
+export const BADGE_CATS = [
+  { k: 'dia', emoji: '📅', label: 'Selos do Dia / Marcos', short: 'Marcos' },
+  { k: 'semana', emoji: '🔥', label: 'Selos da Semana (Constância)', short: 'Semana' },
+  { k: 'diasem', emoji: '📆', label: 'Selos por Dia da Semana', short: 'Dia da semana' },
+  { k: 'horario', emoji: '⏰', label: 'Selos por Horário', short: 'Horário' },
 ]
 
 export const BADGES = [
-  { id: 'first_wod', emoji: '🏅', name: 'Primeiro WOD', desc: 'Você completou sua primeira aula!', goal: 1, metric: 'total' },
-  { id: 'madrugador', emoji: '🔥', name: 'Madrugador', desc: 'Clube das 06h: 5 treinos às 06:00', goal: 5, metric: 'early' },
-  { id: 'semana', emoji: '⚡', name: 'Semana Imbatível', desc: '5 treinos na mesma semana', goal: 5, metric: 'week' },
-  { id: 'dupla', emoji: '🤝', name: 'Treino em Dupla', desc: 'Trouxe um amigo ou cônjuge para aula experimental', goal: 1, metric: 'referrals' },
-  { id: 'm10', emoji: '🏆', name: '10 Aulas', desc: 'Marco de frequência: 10 aulas concluídas', goal: 10, metric: 'total' },
-  { id: 'm50', emoji: '🥈', name: '50 Aulas', desc: 'Marco de frequência: 50 aulas concluídas', goal: 50, metric: 'total' },
-  { id: 'm100', emoji: '👑', name: '100 Aulas', desc: 'Marco de frequência: 100 aulas concluídas', goal: 100, metric: 'total' },
+  // 📅 Marcos
+  { id: 'first_wod', cat: 'dia', emoji: '🏅', name: 'Primeiro WOD', desc: 'Você completou sua primeira aula!', goal: 1, metric: 'total', unit: 'treino' },
+  { id: 'm10', cat: 'dia', emoji: '🏆', name: '10 Treinos', desc: 'Marco de frequência: 10 treinos concluídos', goal: 10, metric: 'total', unit: 'treinos' },
+  { id: 'm50', cat: 'dia', emoji: '🥈', name: '50 Treinos', desc: 'Marco de frequência: 50 treinos concluídos', goal: 50, metric: 'total', unit: 'treinos' },
+  { id: 'm100', cat: 'dia', emoji: '👑', name: '100 Treinos', desc: 'Marco de frequência: 100 treinos concluídos', goal: 100, metric: 'total', unit: 'treinos' },
+  { id: 'dupla', cat: 'dia', emoji: '🤝', name: 'Treino em Dupla', desc: 'Indicou um amigo e ele compareceu à aula experimental', goal: 1, metric: 'referrals', unit: 'indicação' },
+  // 🔥 Semana
+  { id: 'ritmo', cat: 'semana', emoji: '💪', name: 'Ritmo Firme', desc: '3 treinos na mesma semana', goal: 3, metric: 'week', unit: 'treinos' },
+  { id: 'semana', cat: 'semana', emoji: '⚡', name: 'Semana Imbatível', desc: '5 treinos na mesma semana', goal: 5, metric: 'week', unit: 'treinos' },
+  { id: 'sem4', cat: 'semana', emoji: '🗓️', name: '4 Semanas sem Falta', desc: '4 semanas seguidas batendo 3+ treinos', goal: 4, metric: 'weeksInRow', unit: 'semanas' },
+  // 📆 Dia da semana
+  { id: 'seg5', cat: 'diasem', emoji: '🛡️', name: 'Guerreiro de Segunda', desc: '5 segundas-feiras seguidas treinando', goal: 5, metric: 'mondays', unit: 'segundas' },
+  { id: 'sex5', cat: 'diasem', emoji: '🎉', name: 'Sextou no Box', desc: '5 sextas-feiras treinando', goal: 5, metric: 'fridays', unit: 'sextas' },
+  { id: 'sab3', cat: 'diasem', emoji: '🏋️', name: 'Sábado de Aulão', desc: '3 sábados concluídos', goal: 3, metric: 'saturdays', unit: 'sábados' },
+  // ⏰ Horário
+  { id: 'madrugador', cat: 'horario', emoji: '🌅', name: 'Clube das 06:00', desc: 'Madrugador: 5 treinos às 06:00', goal: 5, metric: 'early', unit: 'treinos', time: '06:00' },
+  { id: 'almoco', cat: 'horario', emoji: '🥗', name: 'Turma do Almoço', desc: '5 treinos na aula das 12:10', goal: 5, metric: 'lunch', unit: 'treinos', time: '12:10' },
+  { id: 'corujao', cat: 'horario', emoji: '🦉', name: 'Corujão das 19:30', desc: '5 treinos na aula da noite (19:30)', goal: 5, metric: 'night', unit: 'treinos', time: '19:30' },
 ]
+export const BADGE_METRICS = ['total', 'referrals', 'week', 'weeksInRow', 'mondays', 'fridays', 'saturdays', 'early', 'lunch', 'night']
+export const badgeValue = (p, b) => Math.min(b.goal, p[b.metric] || 0)
 
 export const toMin = (hhmm) => {
   const [h, m] = hhmm.split(':').map(Number)

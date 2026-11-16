@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { CreditCard, Loader2, QrCode, Store, Timer } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { HOLD_MINUTES, ME_ID, PAY_METHODS, PLANS, brl } from '../lib/constants'
-import { KIND_LABEL, confirmPayment, expireHold, priceOf, startCheckout, toast } from '../lib/store'
+import { KIND_LABEL, confirmPayment, expireHold, monthlyDue, priceOf, startCheckout, toast } from '../lib/store'
 import { Alert, Btn, Sheet } from './ui'
 
 function useTick(on) {
@@ -70,7 +70,9 @@ export default function Checkout({ db, open, onClose, kind, plan, slotId, person
   useTick(open && holding)
   if (!open) return null
 
-  const amount = pay?.amount ?? priceOf(db, kind, plan)
+  const due = kind === 'mensalidade' ? monthlyDue(db, personId, plan) : null
+  const amount = pay?.amount ?? (due ? due.total : priceOf(db, kind, plan))
+  const discount = pay ? pay.discount || 0 : due?.discount || 0
   const label = `${KIND_LABEL[kind]}${kind === 'mensalidade' && plan ? ` • ${PLANS[plan].label}` : ''}`
 
   const choose = (method) => {
@@ -124,6 +126,11 @@ export default function Checkout({ db, open, onClose, kind, plan, slotId, person
         <div className="rounded-2xl bg-inverse p-4 text-on-inverse">
           <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{label}</div>
           <div className="font-display text-4xl font-extrabold">{brl(amount)}</div>
+          {discount > 0 && (
+            <div className="mt-1 text-[11px] opacity-80">
+              <s>{brl(amount + discount)}</s> • 🎁 −{brl(discount)} do Indique e Ganhe
+            </div>
+          )}
         </div>
         {slotId && (
           <p className="flex items-center gap-1.5 text-[11px] text-fg-subtle">

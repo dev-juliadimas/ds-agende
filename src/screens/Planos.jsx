@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CalendarCheck, Check, Globe2, Lock, Receipt, Zap } from 'lucide-react'
 import { ME_ID, PAY_METHODS, PLANS, brl, fmtDate } from '../lib/constants'
-import { BILLING_LABEL, KIND_LABEL, billingStatus, demoSetBilling, priceOf } from '../lib/store'
+import { BILLING_LABEL, KIND_LABEL, billingStatus, demoSetBilling, monthlyDue, priceOf } from '../lib/store'
 import Checkout from '../components/Checkout'
 import { Alert, Btn } from '../components/ui'
 
@@ -25,6 +25,7 @@ export default function Planos({ db, nav = () => {} }) {
   const g = db.settings.graceDays
   const pendingDesk = db.payments.find((x) => x.personId === ME_ID && x.kind === 'mensalidade' && x.status === 'pendente' && x.method === 'recepcao')
   const history = db.payments.filter((x) => x.personId === ME_ID)
+  const due = monthlyDue(db, ME_ID)
 
   return (
     <div className="space-y-4 px-5 pb-6 pt-4">
@@ -62,9 +63,15 @@ export default function Planos({ db, nav = () => {} }) {
             </>
           )}
         </div>
+        {due.discount > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs ring-1 ring-emerald-500/30">
+            <span>🎁 Indique e Ganhe: desconto na próxima mensalidade</span>
+            <b className="shrink-0 whitespace-nowrap text-emerald-700 dark:text-emerald-300">−{brl(due.discount)}</b>
+          </div>
+        )}
         {bs.status !== 'pago' && (
           <Btn className="mt-3 w-full py-3" onClick={() => setCheckout({ plan: me.plan })}>
-            Pagar {brl(priceOf(db, 'mensalidade', me.plan))} agora
+            Pagar {brl(due.total)} agora
           </Btn>
         )}
         {bs.status === 'pago' && (

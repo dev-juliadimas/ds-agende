@@ -5,6 +5,7 @@
  */
 import { BOX, DAYS, HOLD_MINUTES, LEVELS, ME_ID, PLANS, WEEKDAY_TIMES, brl, dayByKey, dayIndex, fmtDate } from './constants'
 import {
+  sortNotices,
   botSay,
   book,
   cancel,
@@ -28,6 +29,7 @@ import {
   billingStatus,
   confirmPayment,
   priceOf,
+  monthlyDue,
   startCheckout,
 } from './store'
 
@@ -204,7 +206,9 @@ function respond(chat, raw) {
         : bs.status === 'carencia'
           ? `⏳ Sua mensalidade venceu em ${fmtDate(bs.due)}. Você está na carência e segue treinando ${bs.left === 0 ? 'só até hoje' : `por mais ${bs.left} dia(s)`}.`
           : `🔒 Seu acesso está *suspenso*: a mensalidade venceu em ${fmtDate(bs.due)}.`
-    return botSay(chat, `💳 *Mensalidade — ${PLANS[p.plan].label}*\n${head}\nValor: *${brl(priceOf(st, 'mensalidade', p.plan))}*\n\nComo quer pagar?`, [
+    const due = monthlyDue(st, pid)
+    const valor = due.discount ? `Valor: ~${brl(due.price)}~ *${brl(due.total)}*\n🎁 Desconto do Indique e Ganhe: −${brl(due.discount)}` : `Valor: *${brl(due.price)}*`
+    return botSay(chat, `💳 *Mensalidade — ${PLANS[p.plan].label}*\n${head}\n${valor}\n\nComo quer pagar?`, [
       { label: '💠 Pix', value: 'paymens:pix' },
       { label: '💳 Cartão (link)', value: 'paymens:cartao' },
       { label: '🏪 Na recepção', value: 'paymens:recepcao' },
@@ -302,8 +306,8 @@ function respond(chat, raw) {
     return botSay(chat, `🔁 *Reserva fixa ativada:* ${days.map((d) => dayByKey(d).short).join('/')} às ${time}.\n${made ? `Nesta semana já garanti: ${made}.` : 'Os próximos dias desta semana já passaram — começa na próxima!'}${fail ? `\n\n⚠️ Não reservado:\n${fail}` : ''}`)
   }
   if (cmd === 'avisos') {
-    const list = [...getState().notices].sort((a, b) => b.pinned - a.pinned).slice(0, 4)
-    return botSay(chat, `📢 *Mural do Box*\n\n${list.map((n) => `${n.pinned ? '📌 ' : '• '}*${n.title}*\n${n.body}`).join('\n\n')}`)
+    const list = sortNotices(getState().notices).slice(0, 4)
+    return botSay(chat, `📢 *Mural do Box*\n\n${list.map((n) => `${n.pinned ? '📌 ' : '• '}*${n.title}*${n.eventDate ? ` — ${fmtDate(n.eventDate)}` : ''}\n${n.body}`).join('\n\n')}`)
   }
 
   // ---------- aula experimental ----------

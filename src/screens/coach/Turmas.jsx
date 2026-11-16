@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, Circle, MessageCircle, QrCode, Repeat, StopCircle, UserMinus, X, Globe2, GraduationCap } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { DAYS, LEVELS, dayByKey } from '../../lib/constants'
-import { billingStatus, cancel, checkin, clearQR, closeClass, convertTrial, isBirthday, rotateQR, slotCounts, slotStatus, toast, undoCheckin } from '../../lib/store'
+import { activePenalty, billingStatus, cancel, checkin, clearQR, closeClass, convertTrial, excuseNoShow, isBirthday, rotateQR, slotCounts, slotStatus, toast, undoCheckin } from '../../lib/store'
 import { Alert, Btn, CapacityBar, LevelTag } from '../../components/ui'
 
 export default function Turmas({ db }) {
@@ -18,7 +18,7 @@ export default function Turmas({ db }) {
   const slot = db.slots.find((s) => s.id === slotId)
   const c = slotCounts(db, slotId)
   const roster = db.bookings.filter((b) => b.slotId === slotId && b.status !== 'swapping').map((b) => ({ ...b, p: db.people[b.personId] }))
-  const activeR = roster.filter((b) => ['reservado', 'presente', 'falta', 'pre_reserva'].includes(b.status))
+  const activeR = roster.filter((b) => ['reservado', 'presente', 'falta', 'abonada', 'pre_reserva'].includes(b.status))
   const cancelled = roster.filter((b) => b.status === 'cancelado')
   const alerts = activeR.filter((b) => b.type === 'experimental' || b.type === 'dropin')
   const wl = (db.waitlist[slotId] || []).map((id) => db.people[id])
@@ -28,7 +28,7 @@ export default function Turmas({ db }) {
   // Aniversariante do dia: faz aniversário na data da aula e está com a reserva confirmada (reservado ou presente)
   const classDate = dayByKey(slot.day).date
   const bdayIn = (sid) => db.bookings.some((b) => b.slotId === sid && ['reservado', 'presente'].includes(b.status) && isBirthday(db.people[b.personId], dayByKey(db.slots.find((x) => x.id === sid).day).date))
-  const birthdays = activeR.filter((b) => b.status !== 'falta' && isBirthday(b.p, classDate))
+  const birthdays = activeR.filter((b) => b.status !== 'falta' && b.status !== 'abonada' && isBirthday(b.p, classDate))
 
   return (
     <div className="space-y-4">
@@ -96,7 +96,7 @@ export default function Turmas({ db }) {
             disabled={st === 'closed' || st === 'past'}
             onClick={() => {
               const r = closeClass(slotId)
-              toast(`Aula encerrada: ${r.present} presentes • ${r.noshow} faltas • ${r.cancelled} cancelados`)
+              toast(`Aula encerrada: ${r.present} presentes • ${r.noshow} faltas • ${r.cancelled} cancelados${r.penalized.length ? ` • ⚠️ ${r.penalized.length} penalidade(s) anti-falta` : ''}`)
             }}
           >
             <StopCircle size={16} /> Encerrar aula
@@ -192,7 +192,9 @@ export default function Turmas({ db }) {
                   )}
                   {b.confirmed && <span className="text-highlight">confirmou no lembrete</span>}
                   {b.checkin && <span>✓ {b.checkin.method === 'qr' ? 'QR' : b.checkin.method === 'gps' ? 'GPS' : 'manual'} {b.checkin.at}</span>}
-                  {b.status === 'falta' && <span className="text-rose-300">falta sem aviso</span>}
+                  {b.status === 'falta' && <span className="text-rose-600 dark:text-rose-300">falta sem aviso (No-Show)</span>}
+                  {b.status === 'abonada' && <span className="text-emerald-700 dark:text-emerald-300">falta abonada ✓</span>}
+                  {activePenalty(db, b.personId) && <span className="font-bold text-rose-600 dark:text-rose-300">⚠️ penalidade anti-falta</span>}
                   {b.status === 'pre_reserva' && <span className="font-bold text-amber-600 dark:text-amber-300">⏳ aguardando pagamento</span>}
                   {b.payPending && <span className="font-bold text-amber-600 dark:text-amber-300">💰 paga na recepção</span>}
                   {billingStatus(db, b.personId).status === 'carencia' && <span className="text-amber-600 dark:text-amber-300">mensalidade em carência</span>}
@@ -204,6 +206,18 @@ export default function Turmas({ db }) {
                 </button>
               )}
               {b.p.converted && <span className="text-[10px] font-bold text-highlight">MATRICULADO</span>}
+              {b.status === 'falta' && (
+                <button
+                  onClick={() => {
+                    const r = excuseNoShow(b.id)
+                    if (r.ok) toast(`Falta de ${b.p.name.split(' ')[0]} abonada${r.lifted ? ' • penalidade retirada' : ''}`)
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-semibold text-fg-muted ring-1 ring-line hover:bg-elevated hover:text-fg"
+                  title="O aluno justificou um imprevisto: a falta sai da contagem do mês"
+                >
+                  Abonar falta
+                </button>
+              )}
               {b.status === 'reservado' && st !== 'closed' && (
                 <button
                   onClick={() => {
