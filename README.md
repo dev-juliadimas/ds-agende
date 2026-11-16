@@ -11,6 +11,10 @@ npm run dev     # http://localhost:5173
 
 O DS Agende é um **site**, não um app de loja. O aluno abre pelo link e, se quiser, usa *Adicionar à tela inicial* para ter um ícone no celular sem instalar nada. Ícone, nome e prévia do link no WhatsApp já estão configurados.
 
+### Publicado agora — GitHub Pages
+
+O site está em **https://dev-juliadimas.github.io/ds-agende/**. Cada `git push` na branch `main` publica sozinho uma nova versão (workflow em `.github/workflows/deploy.yml`). O acompanhamento fica na aba *Actions* do repositório.
+
 ### Opção 1 — Netlify Drop (mais rápida, sem Git)
 
 ```bash
