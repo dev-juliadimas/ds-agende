@@ -29,6 +29,12 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          # O .env não vai para o git: estes valores vêm das variáveis do repositório
+          # (Settings → Secrets and variables → Actions → Variables). A chave publishable é pública;
+          # sem elas o site sobe só com a demo e a seção Clientes não aparece.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_DEFAULT_BOX_ID: ${{ vars.VITE_DEFAULT_BOX_ID }}
       # GitHub Pages não conhece as rotas do React: /demo aberto direto cai no 404.html,
       # que é o próprio app e mostra a rota certa
       - run: cp dist/index.html dist/404.html
