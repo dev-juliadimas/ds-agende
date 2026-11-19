@@ -42,7 +42,8 @@ export const WODS = {
   sab: { name: 'PARTNER WOD', desc: 'Em dupla: 100 Wall Balls, 80 Box Jumps, 60 DB Snatches, 40 Burpees', type: 'For Time' },
 }
 
-export function buildSlots() {
+export function buildSlots(preset = null) {
+  if (preset?.grade) return buildPresetSlots(preset)
   const slots = []
   for (const d of DAYS) {
     const times = d.key === 'sab' ? SATURDAY_TIMES : WEEKDAY_TIMES
@@ -60,6 +61,29 @@ export function buildSlots() {
         trialQuota: 2,
         override: null, // ajuste excepcional desta data (não altera a grade fixa)
         special: d.key === 'sab' ? (t === '08:00' ? 'Aulão de Sábado' : 'Fundamentos') : null,
+        closed: false,
+      })
+    }
+  }
+  return slots
+}
+
+// Grade real de um box pré-configurado (src/lib/boxPresets.js): turma única por horário, sem divisão por nível
+function buildPresetSlots(preset) {
+  const slots = []
+  for (const d of DAYS) {
+    for (const [t, modality] of preset.grade[d.key] || []) {
+      slots.push({
+        id: `${d.key}-${t.replace(':', '')}`,
+        day: d.key,
+        time: t,
+        level: 'misto',
+        modality,
+        coach: d.key === 'sab' ? 'Coach Bia' : COACH_MAP[t] || 'Coach Rafa',
+        capacity: d.key === 'sab' ? 20 : CAP_MAP[t] || 12,
+        trialQuota: 2,
+        override: null,
+        special: preset.specials?.[modality] || null,
         closed: false,
       })
     }

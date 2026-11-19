@@ -1,8 +1,34 @@
 import { Moon, Sun, X } from 'lucide-react'
+import { useState } from 'react'
 import { LEVELS } from '../lib/constants'
+import { useBrand } from '../context/BrandContext'
 
-// Logo da marca: a versão escura (traços creme) aparece só no Modo Noturno — ver .logo-light/.logo-dark no CSS
-export function Logo({ className = 'h-8 w-auto', alt = 'DS Agende' }) {
+// Logo da marca: a versão escura (traços creme) aparece só no Modo Noturno — ver .logo-light/.logo-dark no CSS.
+// Com box configurado (BrandProvider), mostra a logo do cliente: preta no Modo Claro, colorida/branca no Noturno.
+// `boxClassName` dá o tamanho da logo do cliente: os PNGs são quadrados com bastante margem transparente,
+// por isso a imagem é ampliada 1,25× e cortada na caixa (o desenho ocupa ~80% da largura do arquivo).
+export function Logo({ className = 'h-8 w-auto', boxClassName = 'h-12 w-12', alt = 'DS Agende' }) {
+  const brand = useBrand()
+  const [failed, setFailed] = useState(false)
+  // Box sem arquivo de logo (pré-configurado da demo): monograma nas cores do box
+  if (brand && !brand.logos) {
+    return (
+      <span aria-label={alt ? brand.name : undefined} className={`inline-flex shrink-0 items-center justify-center p-1.5 ${boxClassName}`}>
+        <span className="flex h-full w-full items-center justify-center rounded-xl bg-raiz font-display text-sm font-extrabold tracking-wider text-ambar ring-1 ring-ambar/50">
+          {brand.monogram || brand.name.slice(0, 2).toUpperCase()}
+        </span>
+      </span>
+    )
+  }
+  if (brand && !failed) {
+    const img = 'h-full w-full scale-125 object-contain'
+    return (
+      <span className={`inline-block shrink-0 overflow-hidden ${boxClassName}`}>
+        <img src={brand.logos.escura} alt={alt && brand.name} onError={() => setFailed(true)} className={`logo-light ${img}`} />
+        <img src={brand.logos.completa} alt={alt && brand.name} onError={() => setFailed(true)} className={`logo-dark ${img}`} />
+      </span>
+    )
+  }
   return (
     <>
       <img src={`${import.meta.env.BASE_URL}logo-ds-agende.png`} alt={alt} className={`logo-light ${className}`} />
@@ -151,5 +177,16 @@ export function Stat({ label, value, sub, accent }) {
       <div className={`font-display text-2xl font-bold ${accent || 'text-fg'}`}>{value}</div>
       {sub && <div className="text-[11px] text-fg-subtle">{sub}</div>}
     </div>
+  )
+}
+
+// Modalidade da aula (box pré-configurado). A cor vem do box; CROSS é branco, por isso o marcador tem contorno.
+export function ModalityTag({ modality, info }) {
+  if (!info) return null
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-elevated px-1.5 py-0.5 text-[10px] font-bold uppercase text-fg-soft ring-1 ring-line">
+      <span className="h-2 w-2 rounded-full ring-1 ring-fg/30" style={{ backgroundColor: info.color }} aria-hidden="true" />
+      {info.label}
+    </span>
   )
 }

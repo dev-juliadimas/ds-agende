@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CalendarCheck, Check, Globe2, Lock, Receipt, Zap } from 'lucide-react'
 import { ME_ID, PAY_METHODS, PLANS, brl, fmtDate } from '../lib/constants'
-import { BILLING_LABEL, KIND_LABEL, billingStatus, demoSetBilling, monthlyDue, priceOf } from '../lib/store'
+import { BILLING_LABEL, KIND_LABEL, billingStatus, demoSetBilling, monthlyDue, priceOf, toast } from '../lib/store'
 import Checkout from '../components/Checkout'
 import { Alert, Btn } from '../components/ui'
 
@@ -39,7 +39,7 @@ export default function Planos({ db, nav = () => {} }) {
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-fg-subtle">Plano atual</div>
-            <div className="font-display text-2xl font-extrabold">{PLANS[me.plan].label}</div>
+            <div className="font-display text-2xl font-extrabold">{me.planName || PLANS[me.plan].label}</div>
             <div className="text-xs text-fg-muted">{brl(priceOf(db, 'mensalidade', me.plan))} / mês</div>
           </div>
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${st.tag}`}>
@@ -83,6 +83,9 @@ export default function Planos({ db, nav = () => {} }) {
       </div>
 
       {/* Planos */}
+      {db.preset?.catalog ? (
+        <Catalog db={db} me={me} onCheckout={(plan) => setCheckout({ plan })} />
+      ) : (
       <div>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-fg-muted">Pacotes</h2>
         <div className="space-y-2">
@@ -113,7 +116,10 @@ export default function Planos({ db, nav = () => {} }) {
         </div>
       </div>
 
+      )}
+
       {/* Avulsos */}
+      {!db.preset?.catalog && (
       <div>
         <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-fg-muted">Aulas avulsas</h2>
         <div className="grid grid-cols-2 gap-2">
@@ -132,6 +138,7 @@ export default function Planos({ db, nav = () => {} }) {
           <Lock size={11} /> Aula avulsa paga por Pix/Cartão fica pré-reservada por 15 min até o pagamento ser confirmado.
         </p>
       </div>
+      )}
 
       {/* Histórico */}
       <div>
@@ -186,6 +193,120 @@ export default function Planos({ db, nav = () => {} }) {
       {bs.status === 'bloqueado' && <Alert kind="info">Dica de demo: ative uma reserva fixa antes de simular o bloqueio. Ao pagar, ela volta a reservar as aulas da semana sozinha.</Alert>}
 
       <Checkout db={db} open={!!checkout} onClose={() => setCheckout(null)} kind="mensalidade" plan={checkout?.plan} title={checkout?.plan !== me.plan ? 'Mudar de plano' : 'Pagar mensalidade'} />
+    </div>
+  )
+}
+
+/* ---------- Catálogo do box (ex.: Içara Training Club) ---------- */
+// Família (TOTAL / HY-FITNESS / Avulsos) × período (mensal, trimestral…). Preço sempre por mês, como o box divulga.
+function Catalog({ db, me, onCheckout }) {
+  const { families, periods, avulsos } = db.preset.catalog
+  const [fam, setFam] = useState(me.family || families[0].k)
+  const [period, setPeriod] = useState(me.period || 'mensal')
+  const f = families.find((x) => x.k === fam)
+  const per = periods.find((x) => x.k === period)
+  const tabs = [...families.map((x) => [x.k, x.label]), ['AV', 'Avulsos']]
+
+  return (
+    <div>
+      <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-fg-muted">Planos do box</h2>
+      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-elevated p-1" role="tablist">
+        {tabs.map(([k, l]) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={fam === k}
+            onClick={() => setFam(k)}
+            className={`rounded-xl py-2 text-xs font-bold uppercase tracking-wide transition ${fam === k ? 'bg-inverse text-on-inverse shadow' : 'text-fg-muted'}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {f ? (
+        <>
+          <p className="mt-2 text-[11px] text-fg-subtle">{f.desc}</p>
+          <div className="mt-2 flex gap-1.5 overflow-x-auto no-scrollbar">
+            {periods.map((p) => (
+              <button
+                key={p.k}
+                onClick={() => setPeriod(p.k)}
+                className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ring-1 transition ${period === p.k ? 'bg-accent text-on-accent ring-transparent' : 'bg-card text-fg-soft ring-line'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 space-y-2">
+            {f.rows.map((r) => {
+              const price = r.prices[period]
+              const save = (r.prices.mensal - price) * per.months
+              const current = me.family === f.k && me.freq === r.freq && me.period === period
+              // O app cobra hoje só o TOTAL mensal (2x / 3x / livre); os outros vão para a recepção
+              const canPay = f.k === 'TOTAL' && period === 'mensal' && r.kind
+              return (
+                <div key={r.freq} className={`flex items-center gap-3 rounded-2xl p-3.5 ring-1 ${current ? 'bg-accent/10 ring-accent/50' : 'bg-card ring-line'}`}>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-inverse font-display text-lg font-extrabold text-on-inverse">
+                    {r.freq === 'livre' ? '∞' : r.freq}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold">{r.label}</div>
+                    <div className="text-[11px] text-fg-subtle">
+                      {per.months > 1 ? `${brl(price * per.months)} no ${per.label.toLowerCase()}` : 'Sem compromisso de período'}
+                    </div>
+                    {save > 0 && <div className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300">Economia de {brl(save)}</div>}
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display text-lg font-bold leading-tight">
+                      {brl(price)}
+                      <span className="text-[10px] font-semibold text-fg-subtle">/mês</span>
+                    </div>
+                    {current ? (
+                      <span className="text-[10px] font-bold uppercase text-highlight">
+                        <Check size={10} className="inline" /> Seu plano
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          canPay ? onCheckout(r.kind) : toast(`Pedido enviado à recepção: ${f.label} ${r.label} · ${per.label}. Eles confirmam pelo WhatsApp.`)
+                        }
+                        className="text-[10px] font-bold uppercase text-highlight underline"
+                      >
+                        Quero este
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {f.addon && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-elevated px-3 py-2 text-xs ring-1 ring-line">
+              <span>➕ {f.addon.label}</span>
+              <b className="shrink-0 whitespace-nowrap">+ {brl(f.addon.price)}/mês</b>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {avulsos.map((a) => (
+            <div key={a.label} className="flex items-center gap-3 rounded-2xl bg-card p-3.5 ring-1 ring-line">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold">{a.label}</div>
+                <div className="text-[11px] text-fg-subtle">{a.sub}</div>
+              </div>
+              <div className="font-display text-lg font-bold">
+                {brl(a.price)}
+                <span className="text-[10px] font-semibold text-fg-subtle">{a.unit}</span>
+              </div>
+            </div>
+          ))}
+          <p className="flex items-center gap-1 text-[11px] text-fg-subtle">
+            <Lock size={11} /> Aula avulsa paga por Pix/Cartão fica pré-reservada por 15 min até o pagamento ser confirmado.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

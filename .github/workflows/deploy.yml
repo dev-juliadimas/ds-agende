@@ -29,6 +29,9 @@ jobs:
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+      # GitHub Pages não conhece as rotas do React: /demo aberto direto cai no 404.html,
+      # que é o próprio app e mostra a rota certa
+      - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

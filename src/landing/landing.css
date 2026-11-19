@@ -1,0 +1,121 @@
+/* Landing de vendas: Tailwind só olha os arquivos desta pasta (CSS menor e sem misturar com a demo) */
+@import "tailwindcss" source("./");
+
+/*
+ * Identidade "Tech Suave" da Double S Tech — sempre clara, com o rodapé em marrom.
+ * As fontes (Tenor Sans e Arimo) são carregadas pelo Google Fonts no <head> do index.html.
+ * Se for copiar este componente para outro projeto, cole o mesmo <link> do Google Fonts
+ * no index.html (ou use @import url(...) na PRIMEIRA linha deste CSS) e mantenha o @theme abaixo.
+ */
+@theme {
+  --font-sans: "Arimo", ui-sans-serif, system-ui, sans-serif;     /* textos */
+  --font-display: "Tenor Sans", "Arimo", ui-sans-serif, sans-serif; /* títulos */
+
+  /* Cores oficiais */
+  --color-raiz: #472415;      /* Raíz Sólida: primária, títulos e textos */
+  --color-ambar: #bf9055;     /* Âmbar da Entrega: botões e ícones em destaque */
+  --color-ambar-hover: #a97b42;
+  --color-nevoa: #faf6f0;     /* Névoa Premium: fundo principal */
+  --color-nevoa-deep: #f5efe6;/* faixas alternadas e áreas de respiro */
+
+  /* Apoio (derivados das oficiais) */
+  --color-card: #fffdf9;
+  --color-line: #e7daca;      /* bordas */
+  --color-muted: #6e4e3b;     /* texto secundário (6:1 na névoa) */
+  --color-highlight: #8a5a24; /* âmbar usado como TEXTO pequeno (5.4:1 na névoa) */
+  --color-ink: #180f0a;       /* texto sobre o âmbar (6.6:1) */
+  --color-wa: #25d366;        /* verde do WhatsApp, só no mockup */
+}
+
+/*
+ * Landing e demo ficam no mesmo site. O index.css (demo) é carregado depois e redefine
+ * alguns tokens com o mesmo nome (e troca no modo escuro). Aqui a landing reaplica os seus
+ * só dentro dela, para ficar sempre clara mesmo se o visitante usou o tema escuro na demo.
+ */
+.landing-root {
+  color-scheme: light;
+  --color-raiz: #472415;
+  --color-ambar: #bf9055;
+  --color-card: #fffdf9;
+  --color-line: #e7daca;
+  --color-highlight: #8a5a24;
+  --color-ink: #180f0a;
+  --color-wa: #25d366;
+}
+
+html:has(.landing-root) { scroll-behavior: smooth; }
+body:has(.landing-root) {
+  background: var(--color-nevoa);
+  color: var(--color-raiz);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tenor Sans tem um único peso: não deixar o navegador "engordar" a fonte */
+.landing-root .font-display { font-synthesis: none; letter-spacing: .01em; }
+
+:focus-visible { outline: 2px solid var(--color-ambar); outline-offset: 3px; }
+
+/* ── Micro-interações (todas desligam com "reduzir movimento") ── */
+.landing-root { --ease-soft: cubic-bezier(.2, .7, .2, 1); }
+
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+.animate-float { animation: float 6s ease-in-out infinite; }
+
+/* Entrada ao rolar (ver <Reveal> em ui.jsx) */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .7s var(--ease-soft), transform .7s var(--ease-soft);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal.is-visible { opacity: 1; transform: none; }
+
+/* Troca de conteúdo das abas */
+@keyframes swap-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.animate-swap { animation: swap-in .45s var(--ease-soft) both; }
+
+/* Balões da conversa simulada */
+@keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
+.animate-bubble { animation: bubble-in .38s var(--ease-soft) both; }
+
+/* Número que "pula" quando muda */
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.22); } 100% { transform: scale(1); } }
+.animate-pop { animation: pop .5s var(--ease-soft); }
+
+/* "digitando…" */
+@keyframes typing { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+.typing-dot { animation: typing 1.1s infinite; }
+.typing-dot:nth-child(2) { animation-delay: .15s; }
+.typing-dot:nth-child(3) { animation-delay: .3s; }
+
+/* Halo suave nos botões que convidam ao clique */
+@keyframes halo { 0% { box-shadow: 0 0 0 0 rgba(191, 144, 85, .55); } 100% { box-shadow: 0 0 0 10px rgba(191, 144, 85, 0); } }
+.animate-halo { animation: halo 1.8s ease-out infinite; }
+
+/* Barras do mini-gráfico crescem quando o card aparece */
+.bar-grow { transform-origin: bottom; transform: scaleY(.06); transition: transform 1s var(--ease-soft); }
+.is-visible .bar-grow { transform: scaleY(1); }
+
+/* Indicador do seletor em pílula */
+.pill-indicator { transition: transform .45s var(--ease-soft); }
+
+/* Acordeão: anima a altura com grid-template-rows (0fr → 1fr) */
+.accordion-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s var(--ease-soft); }
+.accordion-panel[data-open="true"] { grid-template-rows: 1fr; }
+.accordion-panel > div { overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.landing-root) { scroll-behavior: auto; }
+  .landing-root *, .landing-root *::before, .landing-root *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    transition-delay: 0ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+  .bar-grow { transform: none; }
+}
+
+/* Página de cliente (/clientes/:slug): títulos das seções no estilo da marca do box */
+.landing-root[data-club] h2.font-display { font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; }

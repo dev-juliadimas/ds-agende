@@ -17,6 +17,9 @@ create table boxes (
   gps_radius_m int not null default 50 check (gps_radius_m in (30, 50, 100)), -- raio de tolerância do check-in
   checkin_window_min int not null default 15,
   timezone text not null default 'America/Sao_Paulo',    -- "dia" da agenda e do aniversário no fuso do box
+  -- Identidade visual do cliente (white-label). Logos no Storage: assets/boxes/<id>/logo-*.png
+  brand_primary   text check (brand_primary   ~ '^#[0-9a-fA-F]{6}$'), -- ex.: azul marinho
+  brand_secondary text check (brand_secondary ~ '^#[0-9a-fA-F]{6}$'), -- ex.: dourado
   -- Regras definidas pelo responsável (Painel Coach → Capacidade)
   min_cancel_minutes int not null default 120 check (min_cancel_minutes between 0 and 2880), -- cancelar/trocar até X min antes (0 = até o início)
   book_ahead_days int not null default 7 check (book_ahead_days between 0 and 60),            -- reservar com até X dias de antecedência (0 = só no dia)
@@ -633,3 +636,13 @@ create policy stories_files_delete on storage.objects for delete
 -- Limpeza: uma Edge Function agendada (diária) apaga do Storage as fotos de stories
 -- com expires_at < now() - 7 dias e depois remove as linhas. Arquivos do Storage
 -- devem ser apagados pela API do Storage, não por DELETE direto em storage.objects.
+
+-- Identidade visual do box para a tela antes do login (o RLS de boxes não abre a tabela).
+-- Devolve só nome e cores. Logos: bucket público `assets` (sem policy de SELECT, para não permitir listar).
+create or replace function get_box_branding(p_box uuid)
+returns table (id uuid, name text, brand_primary text, brand_secondary text)
+language sql stable security definer set search_path = public as $$
+  select b.id, b.name, b.brand_primary, b.brand_secondary from boxes b where b.id = p_box
+$$;
+revoke execute on function get_box_branding(uuid) from public;
+grant execute on function get_box_branding(uuid) to anon, authenticated, service_role;

@@ -8,14 +8,19 @@
 import { useSyncExternalStore } from 'react'
 import { BADGES, BOX, CLASS_DURATION, DAYS, DISPATCHES, DROPIN_PRICE, HOLD_MINUTES, META_PRICE, ME_ID, PAY_METHODS, PENALTIES, PIX_EXTRA_PRICE, PLANS, TRIAL_LEVELS, brl, dayByKey, dayIndex, fmtDate, fromMin, toMin } from './constants'
 import { buildBookings, buildHistory, buildNotices, buildPeople, buildSlots, buildStories, seedBirthdays, TRIAL_FUNNEL_HISTORY, WODS } from './seed'
+import { activePreset } from './boxPresets'
 
 let uid = 1000
 const nid = (p) => `${p}${++uid}`
 const clock = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
 function initialState() {
-  const slots = buildSlots()
+  // /demo?box=icara → grade, preços e plano do box real (src/lib/boxPresets.js)
+  const preset = activePreset()
+  const slots = buildSlots(preset)
   const people = buildPeople()
+  if (preset?.me) Object.assign(people[ME_ID], preset.me)
+  const prices = preset?.prices || { '2x': PLANS['2x'].price, '3x': PLANS['3x'].price, ilimitado: PLANS.ilimitado.price, dropin: DROPIN_PRICE, extra: PIX_EXTRA_PRICE }
   const bookings = buildBookings(slots, people)
   seedBirthdays(people, bookings)
   return {
@@ -37,7 +42,7 @@ function initialState() {
       salesMode: 'auto',
       salesMaxPct: 70,
       graceDays: 3,
-      prices: { '2x': PLANS['2x'].price, '3x': PLANS['3x'].price, ilimitado: PLANS.ilimitado.price, dropin: DROPIN_PRICE, extra: PIX_EXTRA_PRICE },
+      prices,
       dispatches: { reminder: true, waitlist: true, billing: true, urgent: true, badge: true, rescue: false, penalty: true },
       // Regra Anti-Falta: ao atingir `tolerance` faltas sem aviso no mês, aplica `penalty` (ver PENALTIES)
       // O prazo para cancelar sem falta é o mesmo minCancelHours → boxes.noshow_rule_enabled / noshow_tolerance / noshow_penalty
@@ -45,6 +50,7 @@ function initialState() {
       // Indique e Ganhe: desconto na próxima mensalidade de quem indicou → boxes.referral_reward_type / referral_reward_value
       referral: { type: 'fixed', value: 30 }, // type: 'fixed' (R$) | 'pct' (% da mensalidade)
     },
+    preset,
     slots,
     people,
     bookings,
@@ -55,14 +61,14 @@ function initialState() {
     storiesSeen: {},
     history: buildHistory(slots),
     trialHistory: TRIAL_FUNNEL_HISTORY,
-    wods: WODS,
+    wods: { ...WODS, ...preset?.wods },
     qr: null,
     events: [],
     toasts: [],
     celebration: null,
     rescueSent: {},
     payments: [
-      { id: 'pay_old1', personId: ME_ID, kind: 'mensalidade', plan: '3x', amount: PLANS['3x'].price, method: 'pix', status: 'pago', createdAt: '11/10 07:12', paidAt: '11/10 07:12' },
+      { id: 'pay_old1', personId: ME_ID, kind: 'mensalidade', plan: '3x', amount: prices['3x'], method: 'pix', status: 'pago', createdAt: '11/10 07:12', paidAt: '11/10 07:12' },
     ],
     metaLog: [], // disparos ativos enviados nesta demo: { kind, cost, free }
     flash: {},

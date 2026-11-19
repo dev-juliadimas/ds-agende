@@ -16,3 +16,9 @@
     Permissions-Policy = "geolocation=(self)"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Rotas do React (/demo): qualquer endereço sem arquivo entrega o index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -41,7 +41,7 @@ import {
   absLabel,
   weeklyLimit,
 } from '../lib/store'
-import { Alert, Btn, CapacityBar, Chip, Field, LevelTag, Logo, Sheet, inputCls } from '../components/ui'
+import { Alert, Btn, CapacityBar, Chip, Field, LevelTag, Logo, ModalityTag, Sheet, inputCls } from '../components/ui'
 import { StoriesBar } from '../components/Stories'
 import Checkout from '../components/Checkout'
 
@@ -59,7 +59,9 @@ export default function Agenda({ db, nav = () => {} }) {
   const mine = myBookings(db)
   const upcoming = mine.filter((b) => ['open', 'live'].includes(slotStatus(db, b.slot)))
   const next = upcoming[0]
-  const slots = db.slots.filter((s) => s.day === day && (level === 'all' || s.level === level))
+  // Box pré-configurado: o filtro é por modalidade (CROSS, HY-FITNESS…) em vez de nível
+  const mods = db.preset?.modalities
+  const slots = db.slots.filter((s) => s.day === day && (level === 'all' || (mods ? s.modality === level : s.level === level)))
   const wod = db.wods[day]
   const used = weeklyCount(db, ME_ID)
   const limit = weeklyLimit(db, ME_ID)
@@ -70,14 +72,14 @@ export default function Agenda({ db, nav = () => {} }) {
       <div className="bg-gradient-to-b from-card to-transparent px-5 pb-3 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Logo className="h-11 w-auto" alt="DS Agende" />
+            <Logo className="h-11 w-auto" boxClassName="-my-2 h-16 w-16" alt="DS Agende" />
             <div>
             <p className="text-xs text-fg-muted">Bom treino,</p>
             <h1 className="font-display text-3xl font-extrabold uppercase leading-none tracking-wide">{me.name.split(' ')[0]} 💪</h1>
             </div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-wider text-fg-subtle">Plano {PLANS[me.plan].label}</div>
+            <div className="text-[10px] uppercase tracking-wider text-fg-subtle">Plano {me.planName || PLANS[me.plan].label}</div>
             <div className="font-display text-lg font-bold">
               <span className={used >= limit ? 'text-rose-400' : 'text-highlight'}>{used}</span>
               <span className="text-fg-subtle">/{limit === Infinity ? '∞' : limit} na semana</span>
@@ -105,7 +107,7 @@ export default function Agenda({ db, nav = () => {} }) {
                   {dayByKey(next.slot.day).short} {next.slot.time}
                 </div>
                 <div className="text-xs font-semibold opacity-80">
-                  {LEVELS[next.slot.level].label} • {next.slot.coach}
+                  {mods?.[next.slot.modality]?.label || LEVELS[next.slot.level].label} • {next.slot.coach}
                 </div>
               </div>
               <div className="rounded-xl bg-ink/10 px-2 py-1 text-right text-[11px] font-bold">
@@ -172,12 +174,21 @@ export default function Agenda({ db, nav = () => {} }) {
         <Chip active={level === 'all'} onClick={() => setLevel('all')}>
           Todos
         </Chip>
-        {Object.entries(LEVELS).map(([k, v]) => (
-          <Chip key={k} active={level === k} onClick={() => setLevel(k)}>
-            <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${v.dot}`} />
-            {v.short}
-          </Chip>
-        ))}
+        {mods
+          ? Object.entries(mods)
+              .filter(([k]) => db.slots.some((s) => s.modality === k))
+              .map(([k, v]) => (
+                <Chip key={k} active={level === k} onClick={() => setLevel(k)}>
+                  <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full ring-1 ring-fg/30" style={{ backgroundColor: v.color }} />
+                  {v.label}
+                </Chip>
+              ))
+          : Object.entries(LEVELS).map(([k, v]) => (
+              <Chip key={k} active={level === k} onClick={() => setLevel(k)}>
+                <span className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${v.dot}`} />
+                {v.short}
+              </Chip>
+            ))}
       </div>
 
       {/* WOD do dia */}
@@ -329,7 +340,7 @@ function SlotCard({ db, slot, onOpen }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <LevelTag level={slot.level} size="xs" />
+          {slot.modality ? <ModalityTag modality={slot.modality} info={db.preset?.modalities?.[slot.modality]} /> : <LevelTag level={slot.level} size="xs" />}
           {slot.special && <span className="rounded-full bg-fuchsia-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-fuchsia-300">{slot.special}</span>}
           {slot.override != null && <span className="rounded-full bg-orange-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-orange-300">Lotação ajustada</span>}
           {!past && !salesStatus(db, slot).open && (
