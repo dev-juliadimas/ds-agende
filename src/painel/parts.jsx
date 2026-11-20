@@ -33,7 +33,7 @@ const ROLE = { owner: 'Administrador', coach: 'Coach', aluno: 'Aluno', visitante
 
 /** Situação principal de uma pessoa, para o chip. */
 export function memberStatus(m) {
-  if (m.role === 'owner' || m.role === 'coach') return { tone: 'info', label: ROLE[m.role] }
+  if (m.role === 'owner' || m.role === 'coach') return m.active === false ? { tone: 'muted', label: `${ROLE[m.role]} · inativo` } : { tone: 'info', label: ROLE[m.role] }
   if (m.role === 'visitante') return m.trial_done ? { tone: 'warn', label: 'Fez a experimental' } : { tone: 'info', label: 'Experimental' }
   if (m.financial_status === 'aguardando_pagamento' && m.billing === 'pago') return { tone: 'warn', label: 'Aguardando 1º pagamento' }
   if (m.billing === 'bloqueado') return { tone: 'err', label: `Bloqueado · ${m.days_late}d` }

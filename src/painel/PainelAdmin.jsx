@@ -24,6 +24,7 @@ import { CoachDashboard, Turmas } from './StaffViews'
 import { IncomingSwapsPrompt } from './CoachSwaps'
 import AvisosGestao from './AvisosGestao'
 import WodGestao from './WodGestao'
+import EquipeGestao from './EquipeGestao'
 import { SpecialDaysButton } from './DatasEspeciais'
 import { useNotices } from '../avisos/shared'
 
@@ -275,7 +276,7 @@ const STATUS_FILTERS = [
   ['experimental', 'Experimental'],
 ]
 
-function Alunos({ members, notify, reload }) {
+function Alunos({ box, me, members, staff, notify, reload }) {
   const [f, setF] = useState('alunos')
   const list = members.filter((m) =>
     f === 'todos' ? true : f === 'alunos' ? m.role === 'aluno' || m.role === 'dropin' : f === 'equipe' ? m.role === 'owner' || m.role === 'coach' : m.role === 'visitante',
@@ -289,7 +290,9 @@ function Alunos({ members, notify, reload }) {
           </button>
         ))}
       </div>
-      {list.length ? (
+      {f === 'equipe' ? (
+        <EquipeGestao box={box} me={me} members={list} staff={staff} notify={notify} reload={reload} />
+      ) : list.length ? (
         <ul className="space-y-2">
           {list.map((m) => (
             <MemberRow key={m.person_id} m={m} notify={notify} onChanged={reload} />
@@ -449,7 +452,7 @@ function Dashboard({ box, me, notify }) {
           <>
             <SpecialDaysButton
               box={box}
-              staff={data.members.filter((m) => m.role === 'coach' || m.role === 'owner')}
+              staff={data.members.filter((m) => (m.role === 'coach' || m.role === 'owner') && m.active !== false)}
               notify={notify}
               onChanged={() => setTurmasKey((k) => k + 1)}
             />
@@ -458,7 +461,16 @@ function Dashboard({ box, me, notify }) {
         )}
         {tab === 'treino' && <WodGestao box={box} notify={notify} />}
         {tab === 'avisos' && <AvisosGestao box={box} me={me} role="owner" notify={notify} notices={notices} />}
-        {tab === 'alunos' && <Alunos members={filtered.members} notify={notify} reload={load} />}
+        {tab === 'alunos' && (
+          <Alunos
+            box={box}
+            me={me}
+            members={filtered.members}
+            staff={data.members.filter((m) => (m.role === 'owner' || m.role === 'coach') && (showTest || !m.is_test))}
+            notify={notify}
+            reload={load}
+          />
+        )}
       </div>
 
       {data.members.some((m) => m.is_test) && (
@@ -511,7 +523,9 @@ export default function PainelAdmin() {
       if (!data.session || data.session.user.is_anonymous) return setView('auth')
       const person = await agendaApi.fetchMe(box.id)
       setMe(person)
-      setView(person?.role === 'owner' ? 'painel' : person?.role === 'coach' ? 'coach' : 'denied')
+      // coach desativado (people.active = false) perde o acesso de equipe
+      const role = person?.active === false ? null : person?.role
+      setView(role === 'owner' ? 'painel' : role === 'coach' ? 'coach' : 'denied')
     } catch {
       setView('auth')
     }
