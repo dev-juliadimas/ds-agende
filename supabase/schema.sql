@@ -21,7 +21,7 @@ create table boxes (
   brand_primary   text check (brand_primary   ~ '^#[0-9a-fA-F]{6}$'), -- ex.: azul marinho
   brand_secondary text check (brand_secondary ~ '^#[0-9a-fA-F]{6}$'), -- ex.: dourado
   -- Regras definidas pelo responsável (Painel Coach → Capacidade)
-  min_cancel_minutes int not null default 120 check (min_cancel_minutes between 0 and 2880), -- cancelar/trocar até X min antes (0 = até o início)
+  min_cancel_minutes int not null default 120 check (min_cancel_minutes between 0 and 2880), -- cancelar/trocar até X min antes sem consumir o crédito (0 = até o início); depois disso vira 'late_cancel'
   book_ahead_days int not null default 7 check (book_ahead_days between 0 and 60),            -- reservar com até X dias de antecedência (0 = só no dia)
   reminder_time time not null default '20:00',
   -- Regra Anti-Falta (Painel → Capacidade). O prazo para cancelar sem falta é min_cancel_minutes.
@@ -41,11 +41,16 @@ create table boxes (
   dispatch_reminder boolean not null default true,
   dispatch_waitlist boolean not null default true,
   dispatch_billing  boolean not null default true,
-  dispatch_urgent   boolean not null default true,
+  dispatch_urgent   boolean not null default true,  -- legado: avisos agora vão pela Comunidade (20261128)
   dispatch_badge    boolean not null default true,
   dispatch_rescue   boolean not null default false,
+  whatsapp_community_url text check (whatsapp_community_url is null or whatsapp_community_url ~ '^https://chat\.whatsapp\.com/[A-Za-z0-9]+$'), -- convite da Comunidade do WhatsApp do box (avisos, custo zero)
   sales_mode text not null default 'auto' check (sales_mode in ('livre','auto')), -- venda avulsa só em horários vazios
   sales_max_pct int not null default 70,                                          -- acima disso a aula fica bloqueada p/ venda
+  -- Contato público (página /clientes/:slug). Lido sem login via get_box_contact → migrations/20261202_box_contato.sql
+  address       text,                                                                                   -- endereço completo (vira link do Google Maps)
+  instagram_url text check (instagram_url is null or instagram_url ~ '^https://(www\.)?instagram\.com/[A-Za-z0-9_.]+/?$'),
+  whatsapp      text check (whatsapp is null or whatsapp ~ '^55[0-9]{10,11}$'),                         -- 55 + DDD + número, só dígitos
   created_at timestamptz default now()
 );
 
@@ -62,21 +67,41 @@ create table people (
   plan plan_kind,
   due_date date,                                        -- próximo vencimento da mensalidade
   blocked_at timestamptz,                               -- preenchido pelo job enforce_billing()
-  referrer_id uuid references people(id),               -- quem indicou (selo Treino em Dupla)
+  -- 'aguardando_pagamento' = recém-cadastrado sem a 1ª baixa: não reserva (plan_status = 'pendente')
+  financial_status text not null default 'ativo'
+    constraint people_financial_status_chk check (financial_status in ('ativo','aguardando_pagamento','experimental')),
+  referral_code text unique,                            -- código do Indique e Ganhe (?ref=CODIGO), gerado por my_referral
+  referred_by uuid references people(id) on delete set null, -- quem indicou (Indique e Ganhe / selo Treino em Dupla)
   companion_of uuid references people(id),
   converted_at timestamptz,                             -- visitante → aluno
   birth_date date,                                      -- aniversariantes; o ano nunca é exibido a outros alunos
   birthday_public boolean not null default false,       -- consentimento (LGPD): aparecer na lista do mês para os colegas
+  can_publish_notices_directly boolean not null default false, -- coach publica no mural sem aprovação do admin (20261127)
   created_at timestamptz default now(),
   unique (box_id, phone, name)
 );
 
 -- PAR-Q rápido (visitantes e drop-ins) — dado sensível de saúde (LGPD art. 11)
+-- PAR-Q completo, versão do termo e RLS (aluno insere, só a equipe lê): migrations/20261122_auto_cadastro.sql
 create table health_forms (
   person_id uuid primary key references people(id) on delete cascade,
   injuries text,
   experience text,
   consent_at timestamptz not null default now()
+);
+
+-- Indique e Ganhe: recompensa do indicador. 'pending' no cadastro com ?ref=, 'earned' na
+-- 1ª mensalidade paga do indicado, 'used' quando o box aplica. Regras: migrations/20261130_indique_ganhe.sql
+create table referral_rewards (
+  id uuid primary key default gen_random_uuid(),
+  box_id uuid not null references boxes(id) on delete cascade,
+  referrer_id uuid not null references people(id) on delete cascade,
+  referred_id uuid not null unique references people(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending','earned','used')),
+  created_at timestamptz not null default now(),
+  earned_at timestamptz,
+  used_at timestamptz,
+  check (referrer_id <> referred_id)
 );
 
 -- ---------- Grade fixa + exceções por data ----------
@@ -91,7 +116,7 @@ create table schedule_slots (               -- grade semanal fixa
   level class_level not null default 'misto',
   coach_id uuid references people(id),
   capacity int not null check (capacity > 0),
-  trial_quota int not null default 2,
+  trial_quota int not null default 5,                     -- máx. de alunos em aula experimental por turma
   label text,                               -- ex.: 'Aulão de Sábado'
   sales_block text not null default 'auto' check (sales_block in ('auto','open','blocked')), -- exceção manual de venda
   active boolean not null default true,
@@ -110,18 +135,26 @@ create table class_sessions (              -- instância concreta (data + horár
   unique (slot_id, starts_at)
 );
 
-create table wods (
-  box_id uuid references boxes(id),
-  day date not null,
-  name text not null,
-  description text,
-  wod_type text,
-  primary key (box_id, day)
+-- Treino do Dia por data e modalidade (regras: migrations/20261201_treino_do_dia.sql).
+-- modality = modalities.code (CROSS, HYROX…), o mesmo modality_code de get_agenda.
+-- Substitui a antiga tabela de protótipo `wods` (um treino por dia, sem modalidade).
+create table daily_wods (
+  id          uuid primary key default gen_random_uuid(),
+  box_id      uuid not null references boxes(id) on delete cascade,
+  wod_date    date not null,
+  modality    text not null,
+  title       text not null check (length(trim(title)) between 1 and 80),
+  description text check (length(description) <= 4000),
+  created_by  uuid references people(id) on delete set null,   -- trigger daily_wods_before_write
+  updated_at  timestamptz not null default now(),
+  unique (box_id, wod_date, modality),
+  foreign key (box_id, modality) references modalities(box_id, code) on update cascade on delete cascade
 );
+create index daily_wods_box_date on daily_wods (box_id, wod_date);
 
 -- ---------- Reservas, recorrência e lista de espera ----------
 create type booking_type   as enum ('avulso','recorrente','experimental','dropin','extra');
-create type booking_status as enum ('reservado','presente','cancelado','falta','abonada','pre_reserva','expirado'); -- abonada = falta justificada, abonada pelo coach
+create type booking_status as enum ('reservado','presente','cancelado','falta','abonada','pre_reserva','expirado','late_cancel'); -- abonada = falta justificada, abonada pelo coach; late_cancel = cancelou dentro de min_cancel_minutes: libera a vaga mas conta no limite semanal
 create type channel        as enum ('web','whatsapp','coach','sistema');
 create type checkin_method as enum ('qr','gps','manual');
 
@@ -156,6 +189,19 @@ create table recurrences (
   created_via channel not null
 );
 
+-- Horário Fixo: o aluno fixa uma turma da grade e a vaga é reservada toda semana
+-- (só com plano ativo). RPCs, RLS e job: migrations/20261130_horario_fixo.sql
+create table recurring_bookings (
+  id uuid primary key default gen_random_uuid(),
+  box_id uuid not null references boxes(id) on delete cascade,
+  person_id uuid not null references people(id) on delete cascade,
+  schedule_slot_id uuid not null references schedule_slots(id) on delete cascade,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (person_id, schedule_slot_id)
+);
+
 create table waitlist (
   session_id uuid references class_sessions(id) on delete cascade,
   person_id uuid references people(id),
@@ -182,20 +228,33 @@ create table person_badges (
 );
 
 -- ---------- Comunicação ----------
-create table notices (
+create table notices (                 -- Mural do Box (regras: migrations/20261125_mural_avisos.sql e 20261127_avisos_moderacao.sql)
   id uuid primary key default gen_random_uuid(),
-  box_id uuid references boxes(id),
-  title text not null, body text,
-  category text check (category in ('feriado','evento','aulao','desafio','geral')),
-  pinned boolean default false,      -- comunicado oficial fixado no topo do mural
+  box_id uuid not null references boxes(id) on delete cascade,
+  title text not null check (char_length(btrim(title)) between 1 and 120),
+  body text check (body is null or char_length(body) <= 2000),
+  category text not null default 'geral'
+    check (category in ('geral','urgente','evento','horario','feriado','aulao','desafio')), -- as 3 últimas: avisos antigos
+  pinned boolean not null default false,   -- comunicado oficial fixado no topo do mural
+  send_whatsapp boolean not null default false, -- legado: alerta pago desativado em 20261128 (avisos vão pela Comunidade)
   event_date date,                   -- quando acontece (aparece em destaque no card)
   highlight text,                    -- tag curta de destaque ("Horário especial", "20 vagas")
-  author_id uuid references people(id),
+  created_by uuid references people(id) on delete set null, -- preenchido pelo trigger com quem está logado
+  author_name text,                  -- o aluno não lê `people`; o nome fica no aviso
   affected_day date,
-  whatsapp_sent_at timestamptz,
+  whatsapp_sent_at timestamptz,      -- legado (histórico dos avisos antigos)
   whatsapp_recipients int,
-  created_at timestamptz default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  -- moderação: aviso de coach sem publicação direta espera o administrador
+  status text not null default 'pending' check (status in ('pending','published','rejected')),
+  reviewed_by uuid references people(id) on delete set null,  -- admin que aprovou/recusou
+  reviewed_at timestamptz,
+  rejection_reason text check (rejection_reason is null or char_length(rejection_reason) <= 500),
+  published_at timestamptz           -- entrou no mural (ordem do feed)
 );
+create index notices_feed_idx on notices (box_id, status, pinned desc, published_at desc);
+create index notices_author_idx on notices (created_by);
 
 -- ---------- Stories do coach (foto + legenda, somem em 24 h) ----------
 -- A foto fica no Storage, bucket privado 'stories', no caminho '<box_id>/<uuid>.jpg'.
@@ -221,7 +280,7 @@ create table whatsapp_outbox (           -- fila consumida pela Edge Function qu
   id bigserial primary key,
   box_id uuid references boxes(id),
   person_id uuid references people(id),
-  kind text not null,                    -- reminder | badge | waitlist | urgent | rescue | billing (só se o disparo estiver ligado no box)
+  kind text not null,                    -- reminder | badge | waitlist | rescue | billing (avisos do mural não entram: Comunidade do WhatsApp) (só se o disparo estiver ligado no box)
   meta_category text,                    -- utilidade | marketing (custo Meta); null = resposta dentro da janela de 24h (grátis)
   payload jsonb not null,
   send_after timestamptz default now(),
@@ -259,6 +318,10 @@ begin
      and (s.starts_at at time zone bx.timezone)::date - (now() at time zone bx.timezone)::date > bx.book_ahead_days then
     raise exception 'AGENDA_FECHADA';
   end if;
+  -- só reserva com plano ativo ou na carência (antes de olhar vagas). Exceção: experimental / drop-in.
+  -- Vale para o app e para o bot (os dois chamam esta função). Ver migrations/20261129_trava_plano_ativo.sql
+  select * into p from people where id = p_person;
+  perform _assert_plan_active(p, p_type);
   cap := coalesce(s.capacity_override, sl.capacity);
   select count(*), count(*) filter (where type = 'experimental') into taken, trials
     from bookings where session_id = p_session and status in ('reservado','presente','pre_reserva');
@@ -274,18 +337,20 @@ begin
     if sl.level not in ('iniciante','misto') then raise exception 'NIVEL_INCOMPATIVEL'; end if;
     if trials >= sl.trial_quota then raise exception 'COTA_EXPERIMENTAL'; end if;
   end if;
-  if taken >= cap then raise exception 'TURMA_LOTADA'; end if;
-  select * into p from people where id = p_person;
-  -- inadimplência: carência esgotada bloqueia novas reservas
-  if p.role = 'aluno' and billing_status(p_person) = 'bloqueado' then raise exception 'ACESSO_BLOQUEADO'; end if;
-  if p.role = 'aluno' and p.plan <> 'ilimitado' and p_type not in ('experimental','extra') then
+  -- limite semanal do plano: semana de segunda a domingo NO FUSO DO BOX (não em UTC).
+  -- Vem antes da lotação: o aluno sem aula sobrando não deve ser mandado para a fila.
+  -- A versão com o catálogo de planos (plans.weekly_limit + modalidades liberadas em
+  -- plan_modalities → erro MODALIDADE_NAO_INCLUSA) está em migrations/20261130_regras_plano.sql.
+  if p.role = 'aluno' and p.plan <> 'ilimitado' and p_type not in ('experimental','dropin','extra') then
     select count(*) into weekly from bookings b join class_sessions cs on cs.id = b.session_id
-      where b.person_id = p_person and b.status in ('reservado','presente','pre_reserva') and b.type <> 'extra'
-        and date_trunc('week', cs.starts_at) = date_trunc('week', s.starts_at);
+      where b.person_id = p_person and b.status in ('reservado','presente','pre_reserva','late_cancel') and b.type <> 'extra'
+        and date_trunc('week', cs.starts_at at time zone bx.timezone) = date_trunc('week', s.starts_at at time zone bx.timezone);
     if weekly >= (case p.plan when '2x' then 2 else 3 end) then
-      raise exception 'LIMITE_PLANO';
+      raise exception 'LIMITE_PLANO: Você já tem % de % aulas reservadas nesta semana (segunda a domingo).',
+        weekly, case p.plan when '2x' then 2 else 3 end;
     end if;
   end if;
+  if taken >= cap then raise exception 'TURMA_LOTADA'; end if;
   insert into bookings(session_id, person_id, type, source, status, hold_until)
     values (p_session, p_person, p_type, p_source,
             case when p_hold then 'pre_reserva'::booking_status else 'reservado' end,
@@ -295,18 +360,22 @@ begin
   return result;
 end $$;
 
--- Cancelamento respeitando a antecedência mínima + promoção da lista de espera
+-- Cancelamento + promoção da lista de espera.
+-- Dentro de min_cancel_minutes vira 'late_cancel' (libera a vaga, mas conta no limite semanal).
+-- p_force (coach / inadimplência) é sempre 'cancelado'. Depois do início não cancela (vira falta).
 create or replace function cancel_booking(p_booking uuid, p_source channel, p_force boolean default false)
 returns void language plpgsql security definer as $$
-declare b bookings; s class_sessions; bx boxes; nxt uuid;
+declare b bookings; s class_sessions; bx boxes; v_late boolean;
 begin
   select * into b from bookings where id = p_booking for update;
   select * into s from class_sessions where id = b.session_id;
   select * into bx from boxes where id = s.box_id;
-  if not p_force and s.starts_at - now() < make_interval(mins => bx.min_cancel_minutes) then
-    raise exception 'FORA_DO_PRAZO';
-  end if;
-  update bookings set status = 'cancelado', cancelled_at = now(), cancelled_in_time = true where id = p_booking;
+  if not p_force and s.starts_at <= now() then raise exception 'AULA_ENCERRADA'; end if;
+  v_late := not p_force and s.starts_at - now() < make_interval(mins => bx.min_cancel_minutes);
+  update bookings
+     set status = case when v_late then 'late_cancel'::booking_status else 'cancelado'::booking_status end,
+         cancelled_at = now(), cancelled_in_time = not v_late
+   where id = p_booking;
   perform promote_waitlist(b.session_id);
 end $$;
 
@@ -458,6 +527,11 @@ where p.role = 'aluno'
 group by p.id
 having coalesce(now()::date - max(cs.starts_at)::date, 999) > 7;
 
+-- Views só para SQL Editor / service_role (expõem nome e telefone): fora da API pública
+alter view v_attendance set (security_invoker = on);
+alter view v_churn_risk set (security_invoker = on);
+revoke all on v_attendance, v_churn_risk from anon, authenticated;
+
 -- =====================================================================
 -- Financeiro: mensalidade, carência, bloqueio e pagamentos
 -- Gateway genérico: a Edge Function `create_charge` fala com o provedor
@@ -484,7 +558,7 @@ create table payments (
 );
 create unique index payments_gateway_ref on payments (gateway_ref) where gateway_ref is not null;
 
--- Situação do aluno: 'pago' | 'carencia' | 'bloqueado'
+-- Situação da mensalidade: 'pago' | 'carencia' | 'bloqueado' (Painel e enforce_billing usam estes valores)
 create or replace function billing_status(p_person uuid) returns text language sql stable as $$
   select case
     when p.due_date is null or p.role <> 'aluno' then 'pago'
@@ -493,6 +567,39 @@ create or replace function billing_status(p_person uuid) returns text language s
     else 'bloqueado' end
   from people p join boxes b on b.id = p.box_id where p.id = p_person;
 $$;
+
+-- Situação do plano para reservar: 'ativo' | 'carencia' | 'pendente' | 'bloqueado' | 'sem_plano'
+-- Só 'ativo' e 'carencia' reservam. Coach/owner: 'ativo'. Visitante/drop-in: 'sem_plano'
+-- (reservam pelos tipos experimental/dropin). A versão com o catálogo de planos (people.plan_id)
+-- está em migrations/20261129_trava_plano_ativo.sql.
+create or replace function plan_status(p_person uuid) returns text language sql stable security definer set search_path = public as $$
+  select case
+    when p.role in ('owner','coach') then 'ativo'
+    when p.role <> 'aluno' then 'sem_plano'
+    when p.blocked_at is not null then 'bloqueado'
+    when p.financial_status = 'aguardando_pagamento' then
+      case when billing_status(p.id) = 'bloqueado' then 'bloqueado' else 'pendente' end
+    when p.plan is null then 'sem_plano'
+    when billing_status(p.id) = 'pago' then 'ativo'
+    else billing_status(p.id) end
+  from people p where p.id = p_person;
+$$;
+
+-- Trava das reservas: raise 'PLANO_INATIVO: <mensagem para o aluno>' (o app e o bot mostram o texto após o ':')
+create or replace function _assert_plan_active(p people, p_type booking_type) returns void
+language plpgsql stable security definer set search_path = public as $$
+declare v_status text;
+begin
+  if p.id is null then raise exception 'SEM_PERMISSAO'; end if;
+  if p.role <> 'aluno' or p_type in ('experimental','dropin') then return; end if;
+  v_status := plan_status(p.id);
+  if v_status in ('ativo','carencia') then return; end if;
+  raise exception 'PLANO_INATIVO: %', case v_status
+    when 'pendente'  then 'Seu plano ainda está aguardando o pagamento. Regularize para liberar seus agendamentos.'
+    when 'bloqueado' then 'Seu plano está suspenso por mensalidade em atraso. Regularize para voltar a agendar.'
+    else 'Você precisa de um plano ativo para agendar aulas.' end
+    using detail = v_status;
+end $$;
 
 -- Gera a cobrança. Pix/Cartão de aula avulsa pré-reserva a vaga (hold_minutes).
 create or replace function create_charge(p_person uuid, p_kind pay_kind, p_method pay_method,
@@ -601,10 +708,39 @@ create policy payments_own on payments for select
 
 alter table people enable row level security;
 alter table bookings enable row level security;
+-- sem policy: acesso só pelas RPCs (security definer) e service_role
+alter table boxes enable row level security;
+alter table schedule_slots enable row level security;
+alter table recurrences enable row level security;
+alter table checkin_tokens enable row level security;
+alter table badges enable row level security;
+alter table person_badges enable row level security;
+alter table whatsapp_outbox enable row level security;
+alter table bot_sessions enable row level security;
 alter table health_forms enable row level security;
+alter table referral_rewards enable row level security;   -- sem acesso direto do aluno (my_referral)
 alter table notices enable row level security;
+-- notices: aluno lê só 'published'; coach lê publicados + os próprios; admin lê/aprova/recusa tudo.
+--   Status e autoria no trigger notices_before_write (20261127; sem fila paga desde 20261128_comunidade_whatsapp.sql).
+-- (versão anterior:) trigger notices_before_write
+--   (autoria + fila whatsapp_outbox do alerta urgente) → migrations/20261125_mural_avisos.sql
 -- (políticas: aluno lê/edita só as próprias reservas; coach/owner do mesmo box lê tudo;
 --  health_forms visível apenas para coach/owner; bot usa service_role via Edge Function)
+
+-- ---------- Treino do Dia: alunos do box leem; coach/owner lançam, editam e apagam ----------
+alter table daily_wods enable row level security;
+
+create policy daily_wods_read on daily_wods for select to authenticated
+  using (is_member(box_id));
+create policy daily_wods_insert on daily_wods for insert to authenticated
+  with check (is_staff(box_id));
+create policy daily_wods_update on daily_wods for update to authenticated
+  using (is_staff(box_id)) with check (is_staff(box_id));
+create policy daily_wods_delete on daily_wods for delete to authenticated
+  using (is_staff(box_id));
+
+revoke all on daily_wods from anon, authenticated;
+grant select, insert, update, delete on daily_wods to authenticated;
 
 -- ---------- Stories: acesso ----------
 alter table stories enable row level security;
@@ -646,3 +782,13 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke execute on function get_box_branding(uuid) from public;
 grant execute on function get_box_branding(uuid) to anon, authenticated, service_role;
+
+-- Contato público do box (página /clientes/:slug): endereço, Instagram e WhatsApp.
+-- Os dados do Içara são gravados em migrations/20261202_box_contato.sql.
+create or replace function get_box_contact(p_slug text)
+returns table (address text, instagram_url text, whatsapp text)
+language sql stable security definer set search_path = public as $$
+  select b.address, b.instagram_url, b.whatsapp from boxes b where b.slug = p_slug
+$$;
+revoke execute on function get_box_contact(text) from public;
+grant execute on function get_box_contact(text) to anon, authenticated, service_role;

@@ -1,4 +1,4 @@
-import { DAYS, WEEKDAY_TIMES, SATURDAY_TIMES, COACHES, ME_ID, BADGES } from './constants'
+import { DAYS, WEEKDAY_TIMES, SATURDAY_TIMES, ME_ID, BADGES } from './constants'
 
 // RNG determinístico para a demo ficar igual a cada recarga
 function mulberry32(a) {
@@ -58,7 +58,7 @@ export function buildSlots(preset = null) {
         level,
         coach: d.key === 'sab' ? (t === '08:00' ? 'Coach Rafa' : 'Coach Bia') : COACH_MAP[t],
         capacity: d.key === 'sab' ? (t === '08:00' ? 20 : 12) : CAP_MAP[t],
-        trialQuota: 2,
+        trialQuota: 5,
         override: null, // ajuste excepcional desta data (não altera a grade fixa)
         special: d.key === 'sab' ? (t === '08:00' ? 'Aulão de Sábado' : 'Fundamentos') : null,
         closed: false,
@@ -81,7 +81,7 @@ function buildPresetSlots(preset) {
         modality,
         coach: d.key === 'sab' ? 'Coach Bia' : COACH_MAP[t] || 'Coach Rafa',
         capacity: d.key === 'sab' ? 20 : CAP_MAP[t] || 12,
-        trialQuota: 2,
+        trialQuota: 5,
         override: null,
         special: preset.specials?.[modality] || null,
         closed: false,

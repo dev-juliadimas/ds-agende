@@ -8,10 +8,16 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, Check, Clock, Dumbbell, MapPin, MessageCircle, Smartphone } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Check, Clock, Dumbbell, ExternalLink, MapPin, MessageCircle, Smartphone } from 'lucide-react'
 import { PRESETS } from '../../lib/boxPresets'
 import { DAYS, brl } from '../../lib/constants'
 import { boxAsset, boxLogos, ensureContrast, mix } from '../../lib/brand'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import { getBoxContact } from '../../lib/api/agenda'
+import InterestForm from './InterestForm'
+
+// "Abrir o app do box": agenda real (Supabase) quando o box existe no banco; senão a demo em memória
+const appHrefFor = (box) => (isSupabaseConfigured && box.dbSlug ? `/clientes/${box.slug}/agenda` : `/demo?box=${box.slug}`)
 import { CtaLink, Kicker, PillToggle, Reveal, Section, SectionTitle } from '../ui'
 
 /* ---------- cores do cliente nos tokens da landing ---------- */
@@ -63,6 +69,100 @@ const patternStyle = (box, strength) =>
     ? { backgroundImage: `url("${boxAsset(box.boxId, box.pattern)}")`, backgroundSize: '420px', opacity: strength }
     : { backgroundImage: honeycomb(box.secondary), opacity: strength * 0.6 }
 
+/* ---------- contato (endereço, Instagram, WhatsApp) ---------- */
+// Começa com o fallback do preset e, se o box está no banco, troca pelo que está em boxes.
+function useBoxContact(box) {
+  const fallback = useMemo(
+    () => ({ address: box?.page.address || '', instagram: box?.page.instagram || '', whatsapp: box?.page.whatsapp || '' }),
+    [box],
+  )
+  const [contact, setContact] = useState(fallback)
+  useEffect(() => {
+    setContact(fallback)
+    if (!isSupabaseConfigured || !box?.dbSlug) return
+    let alive = true
+    getBoxContact(box.dbSlug)
+      .then((c) => {
+        if (!alive || !c) return
+        setContact({
+          address: c.address || fallback.address,
+          instagram: c.instagram_url || fallback.instagram,
+          whatsapp: c.whatsapp || fallback.whatsapp,
+        })
+      })
+      .catch(() => {}) // sem rede/função ainda não aplicada: fica o fallback
+    return () => {
+      alive = false
+    }
+  }, [box, fallback])
+  return contact
+}
+
+const mapsUrl = (address) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+const waUrl = (number, text) => `https://wa.me/${number}${text ? `?text=${encodeURIComponent(text)}` : ''}`
+
+// O lucide-react 1.x não traz mais ícones de marca: Instagram desenhado no mesmo traço dos outros ícones
+const InstagramIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="2" y="2" width="20" height="20" rx="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="0.5" fill="currentColor" />
+  </svg>
+)
+
+function ContactBlock({ box, contact }) {
+  const { address, instagram, whatsapp } = contact
+  if (!address && !instagram && !whatsapp) return null
+  const handle = instagram.replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/\/$/, '')
+  const pill =
+    'inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ambar focus-visible:ring-offset-2 focus-visible:ring-offset-raiz'
+  return (
+    <div id="contato" className="scroll-mt-16">
+      <h2 className="mb-4 text-xs font-bold uppercase tracking-[.2em] text-ambar">Contato</h2>
+      {address && (
+        <a
+          href={mapsUrl(address)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group/addr flex max-w-md items-start gap-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 transition hover:ring-ambar"
+        >
+          <MapPin className="mt-0.5 size-5 shrink-0 text-ambar" aria-hidden />
+          <span className="min-w-0">
+            <span className="block text-sm leading-relaxed text-nevoa/90">{address}</span>
+            <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-ambar">
+              Abrir no Google Maps <ExternalLink className="size-3" aria-hidden />
+            </span>
+          </span>
+        </a>
+      )}
+      {(instagram || whatsapp) && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {whatsapp && (
+            <a
+              href={waUrl(whatsapp, `Olá! Vim pela página do ${box.name} e gostaria de mais informações.`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${pill} bg-ambar text-raiz hover:bg-ambar-hover`}
+            >
+              <MessageCircle className="size-4" aria-hidden /> WhatsApp
+            </a>
+          )}
+          {instagram && (
+            <a
+              href={instagram}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${pill} bg-white/5 text-nevoa ring-1 ring-white/20 hover:text-ambar hover:ring-ambar`}
+            >
+              <InstagramIcon className="size-4" aria-hidden /> {handle ? `@${handle}` : 'Instagram'}
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ---------- topo fixo ---------- */
 function TopBar({ box }) {
   return (
@@ -76,18 +176,26 @@ function TopBar({ box }) {
           <a href="#modalidades" className="hover:text-ambar">Modalidades</a>
           <a href="#horarios" className="hover:text-ambar">Horários</a>
           <a href="#planos" className="hover:text-ambar">Planos</a>
+          <a href="#contato" className="hover:text-ambar">Contato</a>
         </nav>
-        <a href="#planos" className="shrink-0 rounded-full bg-ambar px-4 py-2 text-sm font-bold text-raiz transition hover:bg-ambar-hover">
-          Ver planos
-        </a>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* entrada do aluno (agenda real ou demo) */}
+          <Link to={appHrefFor(box)} className="rounded-full px-3 py-2 text-sm font-semibold text-nevoa/90 ring-1 ring-white/25 transition hover:text-ambar hover:ring-ambar">
+            Área do aluno
+          </Link>
+          <a href="#planos" className="hidden rounded-full bg-ambar px-4 py-2 text-sm font-bold text-raiz transition hover:bg-ambar-hover sm:inline-block">
+            Ver planos
+          </a>
+        </div>
       </div>
     </header>
   )
 }
 
 /* ---------- 1. apresentação ---------- */
-function Hero({ box, stats }) {
-  const wa = box.page.whatsapp
+function Hero({ box, stats, contact }) {
+  const wa = contact.whatsapp
+  const appHref = appHrefFor(box)
   return (
     <section id="inicio" className="relative overflow-hidden bg-raiz text-nevoa">
       {/* estampa do box (Storage), sumindo para a esquerda */}
@@ -114,7 +222,7 @@ function Hero({ box, stats }) {
           <CtaLink href="#horarios" icon={CalendarDays}>Ver horários</CtaLink>
           {wa ? (
             <CtaLink
-              href={`https://wa.me/${wa}?text=${encodeURIComponent(`Olá! Vi a página do ${box.name} e quero agendar uma aula experimental.`)}`}
+              href={waUrl(wa, `Olá! Vi a página do ${box.name} e quero agendar uma aula experimental.`)}
               external
               variant="light"
               icon={MessageCircle}
@@ -122,7 +230,7 @@ function Hero({ box, stats }) {
               Agendar aula experimental
             </CtaLink>
           ) : (
-            <CtaLink to={`/demo?box=${box.slug}`} variant="light" icon={Smartphone}>
+            <CtaLink to={appHref} variant="light" icon={Smartphone}>
               Abrir o app do box
             </CtaLink>
           )}
@@ -362,11 +470,12 @@ function Plans({ box }) {
 }
 
 /* ---------- 5. fechamento ---------- */
-function Closing({ box }) {
-  const wa = box.page.whatsapp
+function Closing({ box, contact }) {
+  const wa = contact.whatsapp
+  const appHref = appHrefFor(box)
   return (
     <footer className="bg-raiz px-4 py-16 text-nevoa sm:px-6">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
+      <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-2 md:items-start">
         <div>
           <BoxLogo box={box} kind="texto" className="-ml-3 mb-4 h-24 w-auto object-contain" fallbackClass="mb-4 size-14 text-lg" />
           <p className="font-display text-3xl font-extrabold uppercase sm:text-4xl">Bora treinar?</p>
@@ -376,12 +485,11 @@ function Closing({ box }) {
           <p className="mt-1 flex items-center gap-1.5 text-sm text-nevoa/70">
             <Clock className="size-4 text-ambar" aria-hidden /> Seg a sex 06:00–19:30 • Sáb 09:30
           </p>
+          <div className="mt-6">
+            <CtaLink to={appHref} icon={Smartphone}>{wa ? 'Já sou aluno: abrir a agenda' : 'Abrir o app do box'}</CtaLink>
+          </div>
         </div>
-        {wa ? (
-          <CtaLink href={`https://wa.me/${wa}`} external icon={MessageCircle}>Falar com o box</CtaLink>
-        ) : (
-          <CtaLink to={`/demo?box=${box.slug}`} icon={Smartphone}>Abrir o app do box</CtaLink>
-        )}
+        <ContactBlock box={box} contact={contact} />
       </div>
       <div className="mx-auto mt-12 flex max-w-6xl items-center justify-between gap-4 border-t border-white/10 pt-6 text-xs text-nevoa/60">
         <span>Agenda online por DS Agende</span>
@@ -397,6 +505,7 @@ export default function ClientPage() {
   const { slug } = useParams()
   const box = PRESETS[slug]?.page ? PRESETS[slug] : null
 
+  const contact = useBoxContact(box)
   const theme = useMemo(() => (box ? clientTheme(box.primary, box.secondary) : null), [box])
   const perWeek = useMemo(() => {
     const n = {}
@@ -413,7 +522,14 @@ export default function ClientPage() {
     if (!window.location.hash) window.scrollTo({ top: 0, behavior: 'instant' })
   }, [slug])
 
-  if (!box) return <Navigate to="/" replace />
+  if (!box) {
+    // slug do banco (ex.: /clientes/icara-training-club, link do Super Admin) → endereço curto da página
+    const byDb = Object.values(PRESETS).find((p) => p.page && p.dbSlug === slug)
+    if (byDb) return <Navigate to={`/clientes/${byDb.slug}`} replace />
+    // cliente sem página pronta no site (cadastrado pelo Super Admin): vai direto para a agenda dele
+    if (isSupabaseConfigured) return <Navigate to={`/clientes/${slug}/agenda`} replace />
+    return <Navigate to="/" replace />
+  }
 
   const total = Object.values(perWeek).reduce((a, b) => a + b, 0)
   const stats = [
@@ -426,12 +542,14 @@ export default function ClientPage() {
     <div data-club className="landing-root min-h-screen overflow-x-clip bg-nevoa text-raiz" style={theme}>
       <TopBar box={box} />
       <main>
-        <Hero box={box} stats={stats} />
+        <Hero box={box} stats={stats} contact={contact} />
         <Modalities box={box} perWeek={perWeek} />
         <Schedule box={box} />
         <Plans box={box} />
+        {/* formulário de interesse: só para box que já está no banco */}
+        {isSupabaseConfigured && box.boxId && <InterestForm box={box} />}
       </main>
-      <Closing box={box} />
+      <Closing box={box} contact={contact} />
     </div>
   )
 }

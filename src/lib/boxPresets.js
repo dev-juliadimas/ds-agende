@@ -11,6 +11,8 @@ const ICARA = {
   name: 'Içara Training Club',
   // id do box no Supabase: as logos ficam em assets/boxes/<id>/logo-*.png
   boxId: 'd7864231-4ddd-4908-aa93-1bab258c19be',
+  // boxes.slug no banco (a URL pública usa o slug curto acima). Usado pela Agenda do Aluno.
+  dbSlug: 'icara-training-club',
   // Mesmas cores de boxes.brand_primary / brand_secondary (azul + amarelo da logo)
   primary: '#243464',
   secondary: '#fcbc18',
@@ -25,8 +27,12 @@ const ICARA = {
     tagline: 'CROSS, HY-FITNESS e STRONG em Içara',
     about:
       'Box de treinamento com aulas em turma, conduzidas por coach. A semana tem CROSS, um dia inteiro de HY-FITNESS, turmas de STRONG/CROSS e o Aulão de sábado, com horários das 06:00 às 19:30.',
-    // Número do WhatsApp do box (55 + DDD + número, só dígitos). Vazio = o botão não aparece.
-    whatsapp: '',
+    // Contato. Com o Supabase ligado, vale o que está em boxes (address / instagram_url / whatsapp);
+    // estes valores são o fallback da demo. Mantenha iguais a supabase/migrations/20261202_box_contato.sql.
+    // WhatsApp: 55 + DDD + número, só dígitos. Vazio = o botão não aparece.
+    whatsapp: '554896037332',
+    address: 'Içara Cross, R. Castro Alves, 400 - 1º de Maio, Içara - SC, 88820-000',
+    instagram: 'https://www.instagram.com/icaratrainingclub/',
   },
 
   // Modalidades: a cor aparece como marcador no card da aula
