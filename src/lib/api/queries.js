@@ -102,7 +102,11 @@ export async function fetchRoster(sessionIds) {
   )
 }
 
-/** Busca o nome de uma pessoa (usado quando chega reserva nova via Realtime na tela do coach). */
+/**
+ * Busca o nome de uma pessoa (usado quando chega reserva nova via Realtime na tela do coach).
+ * Atenção: desde migrations/20261126_rls_privacidade_equipe.sql só o owner lê outras pessoas
+ * direto da tabela; para coach, use staff_sessions / staff_people (src/lib/api/painel.js).
+ */
 export async function fetchPersonLite(personId) {
   return unwrap(await requireSupabase().from('people').select('id, name, plan, role').eq('id', personId).maybeSingle())
 }

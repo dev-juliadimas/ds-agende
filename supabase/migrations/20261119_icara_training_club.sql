@@ -7,7 +7,7 @@
 --   • schedule_slots.modality_id → cada horário da grade tem uma modalidade
 --   • plans + plan_modalities    → catálogo de planos (família, frequência,
 --                                  período, preço/mês) e o que cada um libera
--- Parte 2 (dados): bloco DO $$ que acha o box pelo slug/nome e grava tudo.
+-- Parte 2 (dados): bloco DO que acha o box pelo slug/nome e grava tudo.
 --
 -- Convenção de dia da semana (igual a extract(dow) do Postgres e getDay() do JS):
 --   0 = domingo, 1 = segunda, 2 = terça, 3 = quarta, 4 = quinta, 5 = sexta, 6 = sábado

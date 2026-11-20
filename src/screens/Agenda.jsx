@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, Check, ChevronRight, Clock, Globe2, MapPin, QrCode, Repeat, ScanLine, UserPlus, Users, Zap, Hourglass, ArrowLeftRight, XCircle, Lock } from 'lucide-react'
+import { Check, ChevronRight, Clock, Globe2, MapPin, QrCode, Repeat, ScanLine, UserPlus, Users, Zap, Hourglass, ArrowLeftRight, XCircle, Lock } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { BOX, DAYS, LEVELS, ME_ID, PENALTIES, PLANS, TRIAL_LEVELS, WEEKDAY_TIMES, brl, dayByKey, dayIndex, fmtDate } from '../lib/constants'
 import {
@@ -35,8 +35,6 @@ import {
   weeklyCount,
   fmtHours,
   bookingWindow,
-  activeStories,
-  markStorySeen,
   activePenalty,
   absLabel,
   weeklyLimit,
