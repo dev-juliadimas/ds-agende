@@ -174,3 +174,40 @@ export function cancelSpecialSession({ sessionId, reason }) {
     r?.result === 'apagada' ? 'Aula especial removida.' : `Aula especial cancelada${r?.cancelled_bookings ? ` (${r.cancelled_bookings} reserva(s) desfeita(s))` : ''}.`,
   )
 }
+
+/* ---------- gestão da equipe (migrations/20261208_gestao_equipe.sql) ---------- */
+
+/** Administrador: dados, papel ('owner' | 'coach' | 'aluno') e permissão de publicar avisos direto. */
+export function updateTeamMember({ boxId, personId, name, phone, email, birthDate, role, canPublish }) {
+  return call(
+    'admin_update_team_member',
+    {
+      p_box: boxId,
+      p_person: personId,
+      p_name: name,
+      p_phone: phone,
+      p_email: email || null,
+      p_birth_date: birthDate || null,
+      p_role: role,
+      p_can_publish: !!canPublish,
+    },
+    (p) => (p?.role === 'aluno' ? `${p.name.split(' ')[0]} agora é aluno e saiu da equipe.` : 'Dados da equipe salvos.'),
+  )
+}
+
+/**
+ * Administrador: desativa o coach. Se ele tem turma fixa ou aula de hoje em diante,
+ * replacementId (coach/administrador ativo) é obrigatório e assume tudo na mesma transação.
+ */
+export function deactivateCoach({ boxId, coachId, replacementId }) {
+  return call('deactivate_coach', { p_box_id: boxId, p_coach_id: coachId, p_replacement_coach_id: replacementId || null }, (r) => {
+    const parts = []
+    if (r?.slots) parts.push(`${r.slots} turma${r.slots === 1 ? '' : 's'} fixa${r.slots === 1 ? '' : 's'}`)
+    if (r?.sessions) parts.push(`${r.sessions} aula${r.sessions === 1 ? '' : 's'}`)
+    return parts.length ? `Coach desativado. ${parts.join(' e ')} transferida${r.slots + r.sessions === 1 ? '' : 's'}.` : 'Coach desativado.'
+  })
+}
+
+export function reactivateCoach({ boxId, coachId }) {
+  return call('reactivate_coach', { p_box_id: boxId, p_coach_id: coachId }, 'Coach reativado. Ele já pode receber aulas de novo.')
+}
