@@ -329,7 +329,7 @@ function Schedule({ box }) {
         <Reveal className="mb-10 max-w-2xl">
           <Kicker className="mb-3 text-ambar">Horários</Kicker>
           <h2 className="font-display text-4xl font-extrabold uppercase leading-tight sm:text-5xl">Grade da semana</h2>
-          <p className="mt-4 text-base leading-relaxed text-nevoa/75 sm:text-lg">De segunda a sexta, das 06:00 às 19:30. No sábado, Aulão às 09:30.</p>
+          <p className="mt-4 text-base leading-relaxed text-nevoa/75 sm:text-lg">De segunda a sexta, das 06:00 às 19:30. Todo sábado tem Aulão às 09:30.</p>
         </Reveal>
 
         {/* legenda */}
@@ -413,7 +413,11 @@ function Plans({ box }) {
 
   return (
     <Section id="planos" className="bg-nevoa-deep">
-      <SectionTitle kicker="Planos" title="Quanto custa treinar aqui" text="Preço por mês. Nos planos trimestral, semestral e anual o valor mensal cai." />
+      <SectionTitle
+        kicker="Planos"
+        title="Quanto custa treinar aqui"
+        text={`Preço por mês. Nos planos trimestral, semestral e anual o valor mensal cai.${box.payments?.length ? ` Pagamento por ${box.payments.join(' ou ')}.` : ''}`}
+      />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <PillToggle label="Tipo de plano" idPrefix="familia" controls="lista-planos" value={fam} onChange={setFam} options={famOptions} className="w-full max-w-md" />

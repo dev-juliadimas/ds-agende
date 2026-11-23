@@ -80,7 +80,7 @@ function buildPresetSlots(preset) {
         level: 'misto',
         modality,
         coach: d.key === 'sab' ? 'Coach Bia' : COACH_MAP[t] || 'Coach Rafa',
-        capacity: d.key === 'sab' ? 20 : CAP_MAP[t] || 12,
+        capacity: preset.modalities?.[modality]?.capacity ?? (d.key === 'sab' ? 20 : CAP_MAP[t] || 12),
         trialQuota: 5,
         override: null,
         special: preset.specials?.[modality] || null,
