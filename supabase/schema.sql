@@ -62,7 +62,8 @@ create table people (
   box_id uuid not null references boxes(id) on delete cascade,
   auth_user_id uuid unique references auth.users(id),  -- null para visitantes vindos do WhatsApp
   name text not null,
-  phone text not null,                                  -- E.164, chave de identificação no bot
+  phone text,                                           -- E.164, chave de identificação no bot (null = aluno só com CPF, 20261210)
+  cpf text check (cpf is null or cpf ~ '^\d{11}$'),     -- só dígitos; senha provisória do cadastro pelo admin (20261210)
   role member_role not null default 'aluno',
   plan plan_kind,
   due_date date,                                        -- próximo vencimento da mensalidade

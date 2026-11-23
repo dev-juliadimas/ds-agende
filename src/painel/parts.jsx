@@ -51,6 +51,7 @@ function Detail({ label, children }) {
 }
 
 export function WaButton({ phone, text, label = 'WhatsApp' }) {
+  if (!phone) return null // aluno cadastrado só com CPF
   return (
     <a
       href={api.waLink(phone, text)}
@@ -150,9 +151,9 @@ export function HealthForm({ personId }) {
 
 /**
  * Pessoa com detalhes ao tocar. `aside` = texto à direita (ex.: dia do aniversário);
- * `actions` = botões sempre visíveis (ex.: WhatsApp de cobrança).
+ * `actions` = botões sempre visíveis (ex.: WhatsApp de cobrança); `extra` = botões a mais nos detalhes.
  */
-export function MemberRow({ m, aside, sub, actions, notify, onChanged, highlight }) {
+export function MemberRow({ m, aside, sub, actions, notify, onChanged, highlight, extra }) {
   const [open, setOpen] = useState(false)
   const st = memberStatus(m)
   return (
@@ -175,7 +176,7 @@ export function MemberRow({ m, aside, sub, actions, notify, onChanged, highlight
       {open && (
         <div className="space-y-3 border-t border-line px-4 pb-4 pt-3">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-            <Detail label="WhatsApp">{m.phone}</Detail>
+            <Detail label="WhatsApp">{m.phone || '—'}</Detail>
             <Detail label="Papel">{ROLE[m.role] || m.role}</Detail>
             <Detail label="Plano">{m.plan_name || '—'}</Detail>
             <Detail label="Vencimento">{fmtDate(m.due_date)}</Detail>
@@ -188,6 +189,7 @@ export function MemberRow({ m, aside, sub, actions, notify, onChanged, highlight
           <div className="flex flex-wrap gap-2">
             <WaButton phone={m.phone} text={`Olá, ${firstName(m.name)}! Aqui é do box.`} />
             <PayButton m={m} notify={notify} onChanged={onChanged} />
+            {extra}
           </div>
         </div>
       )}

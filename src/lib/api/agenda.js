@@ -222,6 +222,31 @@ export async function updatePassword(password) {
   }
 }
 
+/**
+ * Conta criada pelo box (cadastro em lote) ou com senha resetada: precisa trocar a senha
+ * antes de usar a agenda. Sem a migração 20261210 (ou sem rede) não bloqueia ninguém.
+ */
+export async function fetchMustChangePassword() {
+  try {
+    const { data, error } = await requireSupabase().rpc('my_must_change_password')
+    return !error && data === true
+  } catch {
+    return false
+  }
+}
+
+/** Troca a senha provisória e libera o acesso (profiles.must_change_password = false). */
+export async function setFirstPassword(password) {
+  const res = await updatePassword(password)
+  if (!res.ok) return res
+  return call('finish_first_access', {}, 'Senha definida! Bem-vindo(a) à agenda 💪')
+}
+
+/** Depois do "Esqueci a senha": a senha nova também vale como troca do 1º acesso. */
+export async function clearFirstAccessFlag() {
+  await call('finish_first_access', {}, null)
+}
+
 /** Liga a conta logada ao aluno do box (pelo telefone do cadastro ou o informado). */
 export function linkMyAccount(boxId, phone = null) {
   return call('link_my_account', { p_box: boxId, p_phone: phone }, (p) => `Conta ligada. Bem-vindo(a), ${p?.name?.split(' ')[0]}!`)

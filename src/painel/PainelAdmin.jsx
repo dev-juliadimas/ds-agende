@@ -25,6 +25,7 @@ import { IncomingSwapsPrompt } from './CoachSwaps'
 import AvisosGestao from './AvisosGestao'
 import WodGestao from './WodGestao'
 import EquipeGestao from './EquipeGestao'
+import CadastroAlunos, { ResetPasswordButton } from './CadastroAlunos'
 import { SpecialDaysButton } from './DatasEspeciais'
 import { useNotices } from '../avisos/shared'
 
@@ -278,11 +279,29 @@ const STATUS_FILTERS = [
 
 function Alunos({ box, me, members, staff, notify, reload }) {
   const [f, setF] = useState('alunos')
+  // 1º acesso pendente e se dá para resetar a senha (migrations/20261210_cadastro_em_lote.sql)
+  const [access, setAccess] = useState({})
+  const loadAccess = useCallback(async () => {
+    try {
+      const rows = await api.fetchStudentAccess(box.id)
+      setAccess(Object.fromEntries(rows.map((r) => [r.person_id, r])))
+    } catch {
+      setAccess({}) // migração ainda não aplicada: a lista funciona sem os botões
+    }
+  }, [box.id])
+  useEffect(() => {
+    loadAccess()
+  }, [loadAccess])
+  const changed = () => {
+    reload()
+    loadAccess()
+  }
   const list = members.filter((m) =>
     f === 'todos' ? true : f === 'alunos' ? m.role === 'aluno' || m.role === 'dropin' : f === 'equipe' ? m.role === 'owner' || m.role === 'coach' : m.role === 'visitante',
   )
   return (
     <>
+      {f !== 'equipe' && <CadastroAlunos box={box} notify={notify} onCreated={changed} />}
       <div className="mb-3 flex gap-1.5 overflow-x-auto">
         {STATUS_FILTERS.map(([k, l]) => (
           <button key={k} onClick={() => setF(k)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${f === k ? 'bg-inverse text-on-inverse' : 'bg-card text-fg-muted ring-1 ring-line'}`}>
@@ -295,7 +314,20 @@ function Alunos({ box, me, members, staff, notify, reload }) {
       ) : list.length ? (
         <ul className="space-y-2">
           {list.map((m) => (
-            <MemberRow key={m.person_id} m={m} notify={notify} onChanged={reload} />
+            <MemberRow
+              key={m.person_id}
+              m={m}
+              notify={notify}
+              onChanged={reload}
+              sub={
+                access[m.person_id]?.must_change_password ? (
+                  <span className="font-semibold text-amber-700 dark:text-amber-300">1º acesso pendente</span>
+                ) : m.has_account === false && m.role === 'aluno' ? (
+                  <span>{m.plan_name ? `${m.plan_name} · ` : ''}sem conta no app</span>
+                ) : undefined
+              }
+              extra={<ResetPasswordButton box={box} m={m} access={access[m.person_id]} notify={notify} onChanged={changed} />}
+            />
           ))}
         </ul>
       ) : (
