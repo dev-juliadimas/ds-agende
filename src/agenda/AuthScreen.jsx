@@ -297,3 +297,54 @@ export function LinkAccount({ box, message, onLinked, onLogout, notify }) {
     </section>
   )
 }
+
+/**
+ * 1º acesso de conta criada pelo box (ou senha resetada): a senha atual é o CPF/WhatsApp.
+ * Bloqueia a agenda até o aluno escolher uma senha nova (profiles.must_change_password).
+ */
+export function FirstAccess({ box, onDone, onLogout, notify }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (password.length < 6) return setError('A senha precisa ter pelo menos 6 caracteres.')
+    if (password !== confirm) return setError('As duas senhas não são iguais.')
+    if (/^\d+$/.test(password) && password.length >= 10) {
+      return setError('Não use o CPF ou o telefone como senha. Misture letras e números.')
+    }
+    setBusy(true)
+    const res = await api.setFirstPassword(password)
+    setBusy(false)
+    if (!res.ok) return setError(res.message)
+    notify(res.message)
+    onDone()
+  }
+
+  return (
+    <section>
+      <h1 className="font-display text-3xl font-bold uppercase">Definir nova senha</h1>
+      <p className="mt-1 text-sm text-fg-muted">
+        Bem-vindo(a) ao {box.name}! Você entrou com a senha provisória (CPF ou telefone). Para proteger sua conta, escolha uma senha só sua antes de usar a agenda.
+      </p>
+      <form onSubmit={submit} className="mt-6 space-y-4">
+        <Field label="Nova senha">
+          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+        </Field>
+        <Field label="Repita a nova senha">
+          <PasswordInput value={confirm} onChange={setConfirm} autoComplete="new-password" placeholder="Digite de novo" />
+        </Field>
+        <ErrorBox>{error}</ErrorBox>
+        <Submit busy={busy}>Salvar e entrar</Submit>
+        <p className="pt-2 text-center text-sm">
+          <button type="button" onClick={onLogout} className={linkBtn}>
+            Sair
+          </button>
+        </p>
+      </form>
+    </section>
+  )
+}

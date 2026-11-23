@@ -24,7 +24,7 @@ import { useAgenda } from './useAgenda'
 import { useWods } from './useWods'
 import { useRecurring, slotKey } from './useRecurring'
 import Perfil from './Perfil'
-import AuthScreen, { LinkAccount } from './AuthScreen'
+import AuthScreen, { FirstAccess, LinkAccount } from './AuthScreen'
 import SignupWizard from './signup/SignupWizard'
 import { ToastStack, useToasts } from './toasts'
 import MuralAvisos, { countUnseen, readSeen } from './MuralAvisos'
@@ -101,7 +101,8 @@ export default function AgendaAluno() {
   const [boxState, setBoxState] = useState('loading') // loading | ready | missing | error
   const [me, setMe] = useState(null)
   // loading | auth (entrar) | signup (auto-cadastro) | signup-finish (conta sem cadastro gravado)
-  // | test (seletor de teste) | link (conta sem cadastro) | reset (nova senha) | agenda
+  // | test (seletor de teste) | link (conta sem cadastro) | reset (nova senha)
+  // | first-access (senha provisória do cadastro pelo box: troca obrigatória) | agenda
   const [view, setView] = useState('loading')
   const [isTest, setIsTest] = useState(false)
   const [linkMsg, setLinkMsg] = useState('')
@@ -153,6 +154,11 @@ export default function AgendaAluno() {
         return setView(new URLSearchParams(window.location.search).has('ref') ? 'signup' : 'auth')
       }
       setIsTest(Boolean(user.is_anonymous))
+      // conta criada pelo box (cadastro em lote) ou senha resetada: troca a senha antes da agenda
+      if (!user.is_anonymous && (await api.fetchMustChangePassword())) {
+        setMe(null)
+        return setView('first-access')
+      }
       let person = await api.fetchMe(box.id)
       // auto-cadastro deste box que não chegou a gravar (ex.: caiu a conexão no fim): termina o cadastro
       const meta = user.user_metadata || {}
@@ -191,7 +197,8 @@ export default function AgendaAluno() {
     return () => data.subscription.unsubscribe()
   }, [])
 
-  const finishRecovery = () => {
+  const finishRecovery = async () => {
+    await api.clearFirstAccessFlag() // a senha nova do "Esqueci a senha" também vale como 1º acesso
     window.history.replaceState(null, '', window.location.pathname)
     setRecovering(false)
   }
@@ -261,6 +268,7 @@ export default function AgendaAluno() {
         <SignupWizard box={box} slug={slug} mode="finish" prefill={prefill} onDone={loadMe} notify={push} onCancel={onLogout} />
       )}
       {view === 'reset' && <AuthScreen box={box} slug={slug} initialMode="reset" onDone={finishRecovery} notify={push} />}
+      {view === 'first-access' && <FirstAccess box={box} onDone={loadMe} onLogout={onLogout} notify={push} />}
       {view === 'link' && <LinkAccount box={box} message={linkMsg} onLinked={loadMe} onLogout={onLogout} notify={push} />}
       {view === 'test' && (
         <TestLogin box={box} onPick={onTestPick} onCancel={me ? () => setView('agenda') : () => setView('auth')} cancelLabel={me ? 'Voltar para a agenda' : 'Entrar com e-mail e senha'} />

@@ -35,13 +35,17 @@ const ICARA = {
     instagram: 'https://www.instagram.com/icaratrainingclub/',
   },
 
-  // Modalidades: a cor aparece como marcador no card da aula
+  // Modalidades: a cor aparece como marcador no card da aula.
+  // capacity = vagas por aula (combinado com o box em 23/11/2026). Mantenha igual a
+  // supabase/migrations/20261209_icara_vagas_por_modalidade.sql.
+  // Wellhub/Totalpass não têm cota separada: entram nas mesmas vagas da turma.
   modalities: {
-    CROSS: { label: 'CROSS', color: '#ffffff', desc: 'Treino funcional de alta intensidade, com levantamentos, ginástica e condicionamento. O treino muda todo dia.' },
-    HYROX: { label: 'HY-FITNESS', color: '#fcbc18', desc: 'Preparação no formato HYROX: corrida intercalada com estações de força e resistência, como sled, remo, wall ball e burpees.' },
-    STRONG: { label: 'STRONG', color: '#94a3b8', desc: 'Foco em força: técnica dos levantamentos e progressão de carga.' },
-    STRONG_CROSS: { label: 'STRONG/CROSS', color: '#cbd5e1', desc: 'Turma mista: parte de força e parte de condicionamento na mesma aula.' },
-    AULAO: { label: 'AULÃO', color: '#f59e0b', desc: 'A aula especial de sábado, às 09:30, em turma única.' },
+    CROSS: { label: 'CROSS', color: '#ffffff', capacity: 16, desc: 'Treino funcional de alta intensidade, com levantamentos, ginástica e condicionamento. O treino muda todo dia.' },
+    HYROX: { label: 'HY-FITNESS', color: '#fcbc18', capacity: 18, desc: 'Preparação no formato HYROX: corrida intercalada com estações de força e resistência, como sled, remo, wall ball e burpees.' },
+    STRONG: { label: 'STRONG', color: '#94a3b8', capacity: 8, desc: 'Foco em força: técnica dos levantamentos e progressão de carga.' },
+    // Turma dividida: 8 no STRONG + 8 no CROSS
+    STRONG_CROSS: { label: 'STRONG/CROSS', color: '#cbd5e1', capacity: 16, desc: 'Turma dividida no mesmo horário: 8 vagas no STRONG e 8 no CROSS.' },
+    AULAO: { label: 'AULÃO', color: '#f59e0b', capacity: 30, desc: 'A aula especial de todo sábado, às 09:30, em turma única de até 30 pessoas.' },
   },
 
   // Grade semanal: [horário, modalidade]
@@ -60,6 +64,9 @@ const ICARA = {
   wods: {
     qua: { name: 'HY-FITNESS', desc: '4 rounds: 1 km Run, 20 Wall Balls, 15 Burpee Broad Jumps, 200 m Sled Push', type: 'For Time' },
   },
+
+  // Formas de pagamento que o box aceita
+  payments: ['Pix', 'cartão'],
 
   // Preços que o app usa na cobrança (mensal do TOTAL + aula avulsa)
   prices: { '2x': 245, '3x': 260, ilimitado: 275, dropin: 40, extra: 40 },

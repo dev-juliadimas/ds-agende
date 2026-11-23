@@ -211,3 +211,23 @@ export function deactivateCoach({ boxId, coachId, replacementId }) {
 export function reactivateCoach({ boxId, coachId }) {
   return call('reactivate_coach', { p_box_id: boxId, p_coach_id: coachId }, 'Coach reativado. Ele já pode receber aulas de novo.')
 }
+
+/* ---------- cadastro em lote e senha provisória (migrations/20261210_cadastro_em_lote.sql) ---------- */
+
+/**
+ * rows: [{ name, email, cpf, phone }]. dryRun = true só confere (prévia), false cria as contas.
+ * Devolve por linha: { row_index, row_name, row_email, result, error_code, password_source, person_id, warning }
+ */
+export function importStudents({ boxId, rows, dryRun }) {
+  return call('admin_import_students', { p_box: boxId, p_rows: rows, p_dry_run: dryRun }, null)
+}
+
+/** Volta a senha do aluno para o CPF (ou WhatsApp) e pede senha nova no próximo login. */
+export function resetStudentPassword({ boxId, personId }) {
+  return call('admin_reset_student_password', { p_box: boxId, p_person: personId }, (src) =>
+    `Senha resetada para o ${src === 'cpf' ? 'CPF' : 'WhatsApp com DDD'} (só números). O aluno define uma nova no próximo login.`,
+  )
+}
+
+/** Por pessoa: { person_id, has_cpf, must_change_password, can_reset, reset_source } */
+export const fetchStudentAccess = async (boxId) => (await read('admin_student_access', { p_box: boxId })) || []

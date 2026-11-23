@@ -100,7 +100,6 @@ do $$
 declare
   v_slug     constant text := 'icara-training-club';
   v_name     constant text := 'Içara Training Club';
-  v_capacity constant int  := 20;   -- vagas por aula para horários NOVOS (ajuste aqui; horários já existentes mantêm a capacidade atual)
   v_box      uuid;
   v_slots    int;
   v_off      int;
@@ -164,7 +163,12 @@ begin
   ),
   up as (
     insert into schedule_slots (box_id, weekday, start_time, capacity, modality_id, label, active)
-    select v_box, g.weekday, g.start_time, v_capacity, m.id, g.label, true
+    -- vagas por aula para horários NOVOS, por modalidade (combinado com o box em 23/11/2026;
+    -- horários já existentes mantêm a capacidade atual: veja 20261209_icara_vagas_por_modalidade.sql)
+    select v_box, g.weekday, g.start_time,
+           case g.code when 'CROSS' then 16 when 'HYROX' then 18 when 'STRONG' then 8
+                       when 'STRONG_CROSS' then 16 when 'AULAO' then 30 else 16 end,
+           m.id, g.label, true
       from grid g
       join modalities m on m.box_id = v_box and m.code = g.code
     on conflict (box_id, weekday, start_time) do update

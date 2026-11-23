@@ -107,6 +107,16 @@ export const ERROR_MESSAGES = {
   RESERVA_NAO_ENCONTRADA: 'Reserva não encontrada. Atualize a agenda.',
   RESERVA_INATIVA: 'Esta reserva já foi cancelada ou concluída.',
   COBRANCA_NAO_ENCONTRADA: 'Cobrança não encontrada.',
+  // cadastro em lote e senha provisória (migrations/20261210_cadastro_em_lote.sql)
+  LISTA_INVALIDA: 'Lista inválida. Confira as colunas Nome, Email, CPF e Telefone.',
+  LISTA_VAZIA: 'Nenhum aluno na lista.',
+  LISTA_GRANDE: 'Envie no máximo 500 alunos por vez. Divida a planilha em partes.',
+  ALUNO_NAO_ENCONTRADO: 'Aluno não encontrado. Atualize a lista.',
+  RESET_SO_ALUNO: 'Só dá para resetar a senha de alunos. Equipe usa "Esqueci a senha".',
+  ALUNO_SEM_CONTA: 'Este aluno ainda não tem conta no app. Cadastre o e-mail dele em "Cadastrar alunos".',
+  CONTA_EM_OUTRO_BOX: 'Esta conta também é usada em outro box. Peça ao aluno para usar "Esqueci a senha".',
+  SEM_CPF_TELEFONE: 'Informe o CPF ou o WhatsApp: um deles vira a senha provisória.',
+  SENHA_PROVISORIA: 'A nova senha não pode ser o seu CPF ou telefone. Escolha outra.',
   // front-end
   SUPABASE_NAO_CONFIGURADO: 'Servidor não configurado. Verifique o arquivo .env.',
 }
